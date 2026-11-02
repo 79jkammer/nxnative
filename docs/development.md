@@ -311,6 +311,16 @@ Raising `LLVM_VERSION` takes a new baseline in the same change
 (`tidy --rebaseline`; `dm/tools/tests/test_lint_c.py` checks that the two name
 the same release).
 
+## NXNative Builder
+
+A Mac app that runs the packing script without a terminal: `dm/builder`, built by `scripts/build_builder_app.py` into `dm/builder/build/NXNative Builder.app` (`-o` names another path, `--open` opens it). The Command Line Tools are enough to build the app; building a game with it needs what [the packing script](#the-packing-script-in-detail) needs. The app keeps the path of the checkout it was built from in its `Info.plist` (`NXRepoRoot`), so build it again if the checkout moves.
+
+- **Game and keys.** Dropped on the window or chosen: a game folder, or one of its packages (the folder holding it is used, as the update and DLC are found beside the game), and `prod.keys`. Nothing is copied: the app remembers the paths and passes them to the script. Of a keys file it reads only the key names, to check for `header_key`. It reads a game's title ID as the script does (the ticket's name in the package's header, else the file name's tag) and looks up its profile in `dm/games`.
+- **This Mac.** It checks what `check_prereqs` and `check_metal` check, before a build rather than at its start. An Xcode 27.2 in Applications is used through `DEVELOPER_DIR` (any Xcode when the Command Line Tools are selected), so a build needs no `sudo xcode-select`. **Install in Terminal** runs the commands that fix what is missing in a Terminal window, where the player sees them; none of them needs a password. Python's modules go into a virtual environment, as Homebrew's Python refuses pip outside one: `.nxnative-venv` beside the game folder, or under `~/Library/Application Support/NXNative Builder` before a game is added. Coming back to the app checks again.
+- **The build.** The script's [JSON events and exit status](frontends.md#building-the-nsp-script): stages, progress, messages, and the output path from its `done:` message. Cancel sends SIGINT to the script's process group, as Ctrl-C does, then SIGTERM after 10 s and SIGKILL after 20 s. The Mac does not idle-sleep during a build.
+
+`dm/tools/tests/test_builder_app.py` compiles the logic with `dm/builder/tests/builder_check.swift` and runs it against `dm/builder/tests/fake_build.py`, which writes the script's events; it needs no window or game. It also checks that the events and flags the app uses are still the script's.
+
 ## The packing script in detail
 
 `scripts/build_ipa_from_nsp.py` (`-h` lists every option):

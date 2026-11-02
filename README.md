@@ -31,6 +31,8 @@ Community projects build on nxnative with Mac apps that turn your games into app
 - [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)
 - [LumaNX](https://github.com/Xc1Ym/LumaNX)
 
+This repository has a small one too, NXNative Builder: add your game and `prod.keys` to its window and press Build. It says what the Mac is missing and installs it, and shows the build's progress. Your files stay where they are. Build it once with `python3 scripts/build_builder_app.py --open` ([NXNative Builder](docs/development.md#nxnative-builder)).
+
 ### Build from the command line
 
 You need a Mac with macOS 26.6 or later, [Xcode](https://developer.apple.com/download/all/?q=Xcode%2027.2) 27.2, [Homebrew](https://brew.sh) and Python 3.12 or newer (an arm64 one, not an Intel Homebrew's). An iPhone build also needs Xcode's iOS platform (Xcode → Settings → Components).

@@ -11,3 +11,5 @@ dm/games/*/cb_extent.tsv
 .coverage
 .coverage.*
 /coverage.json
+# NXNative Builder, made by scripts/build_builder_app.py
+/dm/builder/build/
