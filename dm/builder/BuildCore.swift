@@ -4,9 +4,16 @@
 import Foundation
 
 enum BuildTarget: String, CaseIterable, Identifiable {
-    case ios, macApp = "mac-app"
+    case ios, device, macApp = "mac-app"
     var id: String { rawValue }
-    var label: String { self == .ios ? "iPhone & iPad" : "Mac" }
+    var label: String {
+        switch self {
+        case .ios: return L("IPA file")
+        case .device: return L("iPhone")
+        case .macApp: return L("Mac")
+        }
+    }
+    var platform: String { self == .macApp ? rawValue : "ios" }   // the script's --platform
 }
 
 func shellQuote(_ s: String) -> String {
@@ -38,13 +45,16 @@ struct BuildOptions {
     var allowShaderRegressions = false
     var allowOtherMetal = false
     var provisional = false
+    var teamID = ""        // .device: the Apple team that signs it
+    var xcodeWorkspace = ""
+    var envFile = ""       // the player's controls, baked into the app
 
     // What comes after the script's path. An option at the script's default is left out, so the script's own default holds and the command stays short.
     func arguments() -> [String] {
         var a: [String] = []
         if let gameFolder { a.append(gameFolder.path) }
         if needsKeys, let keys { a += ["-k", keys.path] }
-        a += ["--platform", target.rawValue, "--progress", "json"]
+        a += ["--platform", target.platform, "--progress", "json"]
         func text(_ flag: String, _ value: String) {
             let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
             if !v.isEmpty { a += [flag, v] }
@@ -54,18 +64,24 @@ struct BuildOptions {
         text("-l", language)
         text("--app-name", appName)
         text("--bundle-id", bundleID)
-        text("-o", output)
+        if target != .device { text("-o", output) }
         text("--work-dir", workDir)
         text("--gpu", gpu)
+        text("--env-file", envFile)
         switch target {
         case .ios:
             if romfsSeparate { a += ["--romfs", "separate"] }
+            if !showFPS { a.append("--no-show-fps") }
+        case .device:   // an Xcode project, whose game files go to the phone once and stay there while the app is reinstalled (docs/development.md, Quick reinstalls)
+            a += ["--prepare-xcode", "--romfs", "separate"]
+            text("--team-id", teamID)
+            text("--xcode-workspace", xcodeWorkspace)
             if !showFPS { a.append("--no-show-fps") }
         case .macApp:
             text("--mac-sign", macSign)
         }
         if !motion { a.append("--no-motion") }
-        if !keepExtracted { a.append("--no-keep-extracted") }
+        if !keepExtracted, target != .device { a.append("--no-keep-extracted") }
         if allowDamaged { a.append("--allow-damaged") }
         if allowShaderRegressions { a.append("--allow-shader-regressions") }
         if allowOtherMetal { a.append("--allow-other-metal") }
@@ -124,6 +140,7 @@ struct StageRow: Identifiable, Equatable {
     var state = State.running
     var summary = ""
     var elapsed = 0.0
+    var fromScript = true   // false for the install's own stages, which are in words already
     var id: Int { k }
 }
 
@@ -142,6 +159,8 @@ struct BuildTranscript {
     private(set) var lines: [LogLine] = []
     private(set) var output: String?      // the finished IPA or app, from the script's "done:" message
     private(set) var lastError: String?
+    private(set) var project: String?     // --prepare-xcode: "game project: <path>"
+    private(set) var bundleID: String?    // "bundle ID: <id>"
     private var nextLine = 0
 
     var current: StageRow? { stages.last { $0.state == .running } ?? stages.last }
@@ -167,7 +186,7 @@ struct BuildTranscript {
             }
             live = nil
         case let .shadersStale(reason, count):
-            add("Shaders must be rebuilt (\(reason == "chain" ? "the translation chain changed" : "the game profile's shader inputs changed")): \(count) libraries", false)
+            add(reason == "chain" ? L("Shaders must be rebuilt (the translation chain changed): %@ libraries", "\(count)") : L("Shaders must be rebuilt (the game profile's shader inputs changed): %@ libraries", "\(count)"), false)
         case let .say(msg):
             if msg.hasPrefix("[RED] ") {
                 let text = String(msg.dropFirst(6))
@@ -176,11 +195,19 @@ struct BuildTranscript {
             } else {
                 add(msg, false)
                 if let path = Self.donePath(msg) { output = path }
+                if let r = msg.range(of: "game project: ") { project = String(msg[r.upperBound...]) }
+                if let r = msg.range(of: "bundle ID: ") { bundleID = String(msg[r.upperBound...].prefix { $0 != ";" && !$0.isWhitespace }) }
             }
         }
     }
 
     mutating func addStderr(_ text: String) { add(text, true) }
+
+    // A stage of the install, not of the script
+    mutating func beginOwnStage(k: Int, n: Int, name: String, step: String) {
+        apply(.stage(k: k, n: n, name: name, step: step))
+        if let i = stages.firstIndex(where: { $0.k == k }) { stages[i].fromScript = false }
+    }
 
     private mutating func upsert(_ k: Int, _ name: String, _ step: String?) {
         if let i = stages.firstIndex(where: { $0.k == k }) {
@@ -239,6 +266,31 @@ struct GameFolder: Equatable {
     let versions: [Int]      // the versions that can be packed, oldest first
     let bytes: Int64
     let hasBuildFolder: Bool
+
+    // One game of a folder that holds several (nil: the whole folder). A package the app cannot identify may belong to any of them.
+    func packages(of title: UInt64?) -> [GamePackage] {
+        guard let title else { return packages }
+        return packages.filter { $0.baseTitle == nil || $0.baseTitle == title }
+    }
+
+    func versions(of title: UInt64?) -> [Int] {
+        guard !isDump, title != nil else { return versions }
+        return GameScan.versions(packages(of: title))
+    }
+
+    func bytes(of title: UInt64?) -> Int64 {
+        guard !isDump, title != nil else { return bytes }
+        return packages(of: title).reduce(0) { $0 + $1.size }
+    }
+
+    // The game's name as its files give it: "Game [0100…][v0].nsp" → "Game"
+    func fileName(of title: UInt64?) -> String? {
+        let own = packages(of: title)
+        guard let p = own.first(where: { $0.kind == .base }) ?? own.first else { return nil }
+        let name = (p.name as NSString).deletingPathExtension
+        let cut = name.prefix { $0 != "[" }.trimmingCharacters(in: .whitespaces)
+        return cut.isEmpty ? name : cut
+    }
 }
 
 enum GameScanError: LocalizedError {
@@ -261,13 +313,17 @@ enum GameScan {
         let items = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])) ?? []
         let packages = items.filter(isPackage).map(package).sorted { ($0.kind.rawValue, $0.version ?? 0, $0.name) < ($1.kind.rawValue, $1.version ?? 0, $1.name) }
         if packages.isEmpty {
-            throw GameScanError.empty("\(folder.lastPathComponent) holds no game: no .nsp, .nsz, .xci or .xcz file, and no base/exefs/main.npdm of a dump.")
+            throw GameScanError.empty(L("%@ holds no game: no .nsp, .nsz, .xci or .xcz file, and no base/exefs/main.npdm of a dump.", folder.lastPathComponent))
         }
         let titles = Array(Set(packages.compactMap(\.baseTitle))).sorted()
-        var versions = Set(packages.filter { $0.kind == .update }.compactMap(\.version))
-        if packages.contains(where: { $0.kind == .base }) { versions.insert(packages.first { $0.kind == .base }?.version ?? 0) }
-        return GameFolder(url: folder, isDump: false, packages: packages, titles: titles, versions: versions.sorted(),
+        return GameFolder(url: folder, isDump: false, packages: packages, titles: titles, versions: versions(packages),
                           bytes: packages.reduce(0) { $0 + $1.size }, hasBuildFolder: hasBuild(folder, titles))
+    }
+
+    static func versions(_ packages: [GamePackage]) -> [Int] {
+        var found = Set(packages.filter { $0.kind == .update }.compactMap(\.version))
+        if let base = packages.first(where: { $0.kind == .base }) { found.insert(base.version ?? 0) }
+        return found.sorted()
     }
 
     private static func hasBuild(_ folder: URL, _ titles: [UInt64]) -> Bool {
@@ -339,7 +395,10 @@ enum GameScan {
     }
 
     // The first build needs about twice the game's size plus 10 GB (README.md). An existing build folder already holds most of it.
-    static func spaceNeeded(_ game: GameFolder) -> Int64 { game.hasBuildFolder ? 0 : game.bytes * 2 + 10 << 30 }
+    static func spaceNeeded(_ game: GameFolder, title: UInt64? = nil) -> Int64 {
+        let built = title.map { FileManager.default.fileExists(atPath: game.url.appendingPathComponent(hex($0) + "_build").path) } ?? game.hasBuildFolder
+        return built ? 0 : game.bytes(of: title) * 2 + 10 << 30
+    }
 }
 
 // dm/games/<title ID>/game.tsv: the game's name and the builds it was brought up on
@@ -365,14 +424,14 @@ struct GameProfile: Equatable {
 enum KeysCheck {
     // Whether the file looks like prod.keys: lines of name = hex, with the header key every package needs. Only names are looked at, and nothing read here leaves this function.
     static func problem(_ url: URL) -> String? {
-        guard let d = try? Data(contentsOf: url, options: .mappedIfSafe) else { return "The file cannot be read." }
-        if d.count > 1 << 20 { return "This file is too big to be a keys file." }
-        guard let text = String(data: d, encoding: .utf8) else { return "This is not a text keys file." }
+        guard let d = try? Data(contentsOf: url, options: .mappedIfSafe) else { return L("The file cannot be read.") }
+        if d.count > 1 << 20 { return L("This file is too big to be a keys file.") }
+        guard let text = String(data: d, encoding: .utf8) else { return L("This is not a text keys file.") }
         let names = text.split(whereSeparator: \.isNewline).compactMap { line -> String? in
             guard let eq = line.firstIndex(of: "=") else { return nil }
             return line[..<eq].trimmingCharacters(in: .whitespaces).lowercased()
         }
-        return names.contains("header_key") ? nil : "No header_key in this file: it is not a complete prod.keys."
+        return names.contains("header_key") ? nil : L("No header_key in this file: it is not a complete prod.keys.")
     }
 }
 
@@ -389,8 +448,8 @@ func formatCount(_ p: LiveProgress) -> String {
     let e = p.estimated ? "~" : ""
     var s = ""
     if p.total > 0 {
-        s = p.unit == "B" ? "\(formatBytes(p.done)) of \(e)\(formatBytes(p.total))"
-            : "\(Int(p.done).formatted()) of \(e)\(Int(p.total).formatted())" + (p.unit.isEmpty ? "" : " \(p.unit)")
+        s = p.unit == "B" ? L("%@ of %@", formatBytes(p.done), e + formatBytes(p.total))
+            : L("%@ of %@", Int(p.done).formatted(), e + Int(p.total).formatted()) + (p.unit.isEmpty ? "" : " \(p.unit)")
     } else if p.done > 0 {
         s = p.unit == "B" ? formatBytes(p.done) : Int(p.done).formatted() + (p.unit.isEmpty ? "" : " \(p.unit)")
     }

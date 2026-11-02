@@ -1,4 +1,4 @@
-// NXNative Builder's logic and its run of a script, without its window: dm/tools/tests/test_builder_app.py compiles this with BuildCore.swift, Environment.swift and BuilderModel.swift, and runs it
+// NXNative Builder's logic and its run of a script, without its window: dm/tools/tests/test_builder_app.py compiles this with Strings.swift, BuildCore.swift, Controls.swift, Device.swift, Environment.swift and BuilderModel.swift, and runs it
 // with the fake script (tests/fake_build.py) and a temporary folder. Exit 0 when every check holds.
 import Foundation
 
@@ -18,6 +18,57 @@ func pfs0(_ names: [String]) -> Data {
     return Data(d + strs + [1, 2, 3, 4])
 }
 
+func checkStrings() {
+    Lang.selected = .ru
+    check(L("Back") != "Back" && L("Not in the table") == "Not in the table", "the Russian table, and English for what it lacks")
+    check(L("Installing %@ (%@ of %@)…", "A", "1", "2").contains("1") && L("Installing %@ (%@ of %@)…", "A", "1", "2").contains("2"), "arguments in a translation")
+    for (key, value) in Lang.russian {
+        check(key.components(separatedBy: "%@").count == value.components(separatedBy: "%@").count, "the same arguments: \(key)")
+    }
+    Lang.selected = .en
+    check(L("Back") == "Back" && L("Works until %@.", "x") == "Works until x.", "English")
+    check(friendlyStage("build nx_extract") == "Preparing tools" && friendlyStage("extract v0") == "Unpacking the game" && friendlyStage("rewrite") == "Adapting the game", "stages in words")
+    check(friendlyStage("iOS shaders").hasPrefix("Preparing the graphics") && friendlyStage("Vulkan shaders").hasPrefix("Preparing the graphics") && friendlyStage("IPA pack") == "Building the app", "stages in words")
+    check(friendlyStage("Install on Phone") == "Install on Phone", "the install's own stages stay")
+    let items = [EnvItem(id: "a", title: "A", ok: false, detail: "", fix: "a", helper: true), EnvItem(id: "b", title: "B", ok: true, detail: "", fix: "b", helper: true), EnvItem(id: "h", title: "H", ok: false, detail: "", fix: "h", terminal: true)]
+    let report = EnvReport(items: items)
+    check(report.fixSteps.map(\.command) == ["a"] && report.needsTerminal, "what runs here, and what goes to Terminal")
+    var own = BuildTranscript()
+    own.beginOwnStage(k: 1, n: 1, name: "n", step: "s")
+    own.apply(.stage(k: 2, n: 2, name: "m", step: ""))
+    check(own.stages[0].fromScript == false && own.stages[1].fromScript, "whose stage it is")
+}
+
+func checkControls(_ tmp: URL) throws {
+    var c = Controls()
+    check(c.envLines.isEmpty && c.key(of: "A") == 38 && c.key(of: "RSU") == nil && c.padTarget(of: "A") == "A", "the defaults")
+    c.assign(key: 50, to: "A")
+    check(c.key(of: "A") == 50 && c.envLines == ["DM_KEYMAP=A=50"], "\(c.envLines)")
+    c.assign(key: 40, to: "A")   // B's default key
+    check(c.key(of: "A") == 40 && c.key(of: "B") == nil, "the key's old action goes without one, as in the host")
+    c.assign(key: 38, to: "A")   // back to its own default
+    check(c.key(of: "A") == 38 && c.keys["A"] == nil && c.key(of: "B") == 40, "a default needs no line")
+    c.assign(key: 13, to: "RSU"); c.assign(key: 0, to: "RSL")
+    check(c.key(of: "RSU") == 13 && c.key(of: "LSU") == nil, "the camera on WASD")
+    c.reset()
+    c.assign(pad: "A", to: "B"); c.assign(pad: "B", to: "A"); c.assign(pad: "X", to: "X")
+    check(c.envLines == ["DM_PAD_MAP=A=B,B=A"], "\(c.envLines)")
+    check(c.merged(into: "DM_FPS_TARGET=30\nDM_PAD_MAP=old\n") == "DM_FPS_TARGET=30\nDM_PAD_MAP=A=B,B=A\n", "the player's other lines stay")
+    check(Controls().merged(into: "DM_KEYMAP=A=1\n") == "", "nothing left")
+    check(Controls.keyName(38) == "J" && Controls.keyName(nil) == "No key" && Controls.keyName(127) == "#127", "key names")
+
+    let fm = FileManager.default
+    let game = tmp.appendingPathComponent("cleanup"), build = game.appendingPathComponent("X_build"), derived = build.appendingPathComponent("xcode-derived-data"), nsp = game.appendingPathComponent("g.nsp")
+    try fm.createDirectory(at: derived, withIntermediateDirectories: true)
+    try Data(count: 20_000).write(to: derived.appendingPathComponent("o"))
+    try Data(count: 20_000).write(to: nsp)
+    let mac = Cleanup.items(target: .macApp, buildFolder: build, gameFiles: [nsp], output: game.appendingPathComponent("G.app"))
+    check(mac.map(\.id) == ["build", "game"] && mac[0].selected && !mac[1].selected && mac[0].bytes > 0, "a Mac game: the build is offered, the game's files only by choice: \(mac.map(\.id))")
+    let phone = Cleanup.items(target: .device, buildFolder: build, gameFiles: [], output: nil)
+    check(phone.map(\.id) == ["derived", "build"] && phone[0].selected && !phone[1].selected, "an iPhone game keeps what Reinstall needs unless asked")
+    check(Cleanup.items(target: .macApp, buildFolder: build, gameFiles: [], output: build.appendingPathComponent("G.app")).isEmpty, "never the folder that holds the output")
+}
+
 func checkXcode() {
     let clt = "/Library/Developer/CommandLineTools", tested = "/A/Xcode-27.2.app/Contents/Developer", newer = "/A/Xcode.app/Contents/Developer"
     check(Host.pickXcode(selected: clt, apps: [(newer, "28.0"), (tested, "27.2")]) == tested, "the tested Xcode wins")
@@ -26,6 +77,83 @@ func checkXcode() {
     check(Host.pickXcode(selected: clt, apps: [(newer, "28.0")]) == newer, "any Xcode beats the Command Line Tools")
     check(Host.pickXcode(selected: newer, apps: [(newer, "28.0")]) == nil, "a selected Xcode stays")
     check(Host.pickXcode(selected: clt, apps: []) == nil, "no Xcode")
+}
+
+func checkDevice() {
+    // The shape devicectl writes: the deprecated groups, the newer properties.*, and devices that do not count
+    let json = #"""
+    {"result":{"devices":[
+     {"hardwareProperties":{"platform":"iOS","reality":"physical","udid":"U1","marketingName":"iPhone 16 Pro Max","productType":"iPhone17,2"},"connectionProperties":{"tunnelState":"connected","transportType":"wired"},"deviceProperties":{"name":"Phone","developerModeStatus":"disabled"}},
+     {"properties":{"hardware":{"platform":"iOS","reality":"physical","udid":"U2","marketingName":"iPhone 14","productType":"iPhone14,7"},"connection":{"state":"connected","transportType":"localNetwork"},"device":{"name":"A old","developerModeStatus":"enabled"}}},
+     {"hardwareProperties":{"platform":"iOS","reality":"physical","udid":"U3","productType":"iPhone17,1"},"connectionProperties":{"tunnelState":"unavailable"},"deviceProperties":{"name":"Away"}},
+     {"hardwareProperties":{"platform":"watchOS","reality":"physical","udid":"U4"},"connectionProperties":{"tunnelState":"connected"}},
+     {"hardwareProperties":{"platform":"iOS","reality":"virtual","udid":"U5"},"connectionProperties":{"tunnelState":"connected"}}
+    ]}}
+    """#
+    let devices = DeviceList.parse(Data(json.utf8))
+    check(devices.map(\.id) == ["U1", "U2"], "connected physical devices, by cable first: \(devices.map(\.id))")
+    check(devices[0].developerMode == false && devices[0].supported == true && devices[0].wired, "\(devices[0])")
+    check(devices[1].developerMode == true && devices[1].supported == false && !devices[1].wired, "\(devices[1])")
+    check(DeviceList.parse(Data("not json".utf8)).isEmpty, "other output")
+    check(ConnectedDevice(id: "", name: "", model: "", productType: "iPhone16,1", developerMode: nil, wired: true).supported == true, "the iPhone 15 Pro")
+    check(ConnectedDevice(id: "", name: "", model: "", productType: "iPhone15,4", developerMode: nil, wired: true).supported == false, "the iPhone 15")
+    check(ConnectedDevice(id: "", name: "", model: "", productType: "iPad14,3", developerMode: nil, wired: true).supported == nil, "an iPad")
+
+    let prefs: [String: Any] = ["DVTDeveloperAccountManagerAppleIDLists": ["IDE.Identifiers.Prod": [["username": "a@b.c"]]],
+                                "IDEProvisioningTeamByIdentifier": ["x": [["teamID": "PAID000000", "teamName": "Paid", "isFreeProvisioningTeam": false], ["teamID": "FREE000000", "teamName": "Me (Personal Team)", "isFreeProvisioningTeam": true]]]]
+    check(AppleAccount.hasAccount(prefs) && AppleAccount.teams(prefs).map(\.id) == ["FREE000000", "PAID000000"], "a free team first")
+    check(!AppleAccount.hasAccount(["DVTDeveloperAccountManagerAppleIDLists": ["IDE.Identifiers.Prod": [Any]()]]), "no account")
+    check(AppleAccount.teams(["IDEProvisioningTeams": ["a@b.c": [["teamID": "OLD0000000"]]]]).map(\.id) == ["OLD0000000"], "the older key")
+
+    // Both ways openssl writes a subject; the (…) in the name is not the team
+    check(AppleAccount.certificateTeam(subject: "subject= /UID=ABC/CN=Apple Development: Me (ZZZZZZZZZZ)/OU=TEAM123456/O=Me/C=US") == "TEAM123456", "a slash subject")
+    check(AppleAccount.certificateTeam(subject: "subject=UID = ABC, CN = Apple Development: Me (ZZZZZZZZZZ), OU = TEAM123456, O = Me, C = US") == "TEAM123456", "a comma subject")
+    check(AppleAccount.certificateTeam(subject: "subject=CN = Apple Development: Me (ZZZZZZZZZZ)") == nil, "no OU")
+    let waiting = EnvCheck.deviceItems(devices: [], hasAccount: true, teams: [])
+    check(waiting.first { $0.id == "apple-id" }?.ok == true && waiting.first { $0.id == "apple-team" }?.detail.contains("Manage Certificates") == true, "an account with no team says what is left")
+
+    // Everything is the player's to do: no item carries a command, and none shows the account's name
+    let none = EnvCheck.deviceItems(devices: [], hasAccount: false, teams: [])
+    check(none.map(\.id) == ["apple-id", "device"] && none.allSatisfy { !$0.ok && $0.fix == nil }, "nothing yet: \(none.map(\.id))")
+    let off = EnvCheck.deviceItems(devices: [devices[0]], hasAccount: true, teams: [AppleTeam(id: "T", name: "n", isFree: true)])
+    check(off.first { $0.id == "developer-mode" }?.ok == false && off.first { $0.id == "device" }?.ok == true && !off.contains { $0.id == "device-model" }, "Developer Mode: \(off.map(\.id))")
+    check(EnvCheck.deviceItems(devices: [devices[1]], hasAccount: true, teams: []).contains { $0.id == "device-model" && !$0.ok }, "an old iPhone is said to be")
+
+    check(XcodeInstall.bundleID(team: "ABC123DEFG", title: 0x010015100B514000) == "org.nxnative.uabc123defg.010015100b514000", "a bundle ID of the player's own")
+    let full = XcodeInstall.arguments(project: "/p", scheme: "s", device: "U1", team: "T", derivedData: "/d", limitedMemory: false)
+    check(full.contains("id=U1") && full.contains("DEVELOPMENT_TEAM=T") && full.contains("-allowProvisioningUpdates") && !full.contains("CODE_SIGN_ENTITLEMENTS="), "\(full)")
+    check(XcodeInstall.arguments(project: "/p", scheme: "s", device: "U1", team: "T", derivedData: "/d", limitedMemory: true).contains("CODE_SIGN_ENTITLEMENTS="), "no entitlements")
+    let list = Data(#"{"project":{"schemes":["DmIOS","Mario (010015100B514000)"]}}"#.utf8)
+    check(XcodeInstall.scheme(listJSON: list, title: 0x010015100B514000) == "Mario (010015100B514000)", "the game's scheme")
+    check(XcodeInstall.scheme(listJSON: list, title: nil) == "Mario (010015100B514000)", "without a title ID")
+    check(XcodeInstall.appPath(settingsJSON: Data(#"[{"buildSettings":{"TARGET_BUILD_DIR":"/o","FULL_PRODUCT_NAME":"DmIOS.app"}}]"#.utf8)) == "/o/DmIOS.app", "the app")
+    let plist = #"<?xml version="1.0"?><plist version="1.0"><dict><key>ExpirationDate</key><date>2026-11-10T00:00:00Z</date></dict></plist>"#
+    check(XcodeInstall.expiry(profilePlist: Data(plist.utf8)) != nil, "the profile's end")
+
+    check(InstallFailure.classify(["Personal development teams, including \"Me\", do not support the Increased Memory Limit capability."]) == .memoryCapability, "capability")
+    check(InstallFailure.classify(["Provisioning profile doesn't include the com.apple.developer.kernel.increased-memory-limit entitlement."]) == .memoryCapability, "entitlement")
+    check(InstallFailure.classify(["error: No Accounts: Add a new account in Accounts settings."]) == .noAccount, "account")
+    check(InstallFailure.classify(["error: The app identifier \"x\" cannot be registered to your development team"]) == .bundleID, "bundle ID")
+    check(InstallFailure.classify(["Your maximum App ID limit has been reached."]) == .appLimit, "limit")
+    check(InstallFailure.classify(["ERROR: the device is locked"]) == .deviceLocked, "locked")
+    check(InstallFailure.classify(["noise", "foo.c:1: error: boom"]) == .other("foo.c:1: error: boom"), "other")
+
+    // What the script gets for an install
+    var o = BuildOptions()
+    o.gameFolder = URL(fileURLWithPath: "/g")
+    o.keys = URL(fileURLWithPath: "/k")
+    o.target = .device
+    o.teamID = "T"
+    o.output = "/x.ipa"
+    o.keepExtracted = false
+    o.xcodeWorkspace = "/g/NxNative.xcworkspace"
+    let a = o.arguments()
+    check(a.contains("--prepare-xcode") && a.contains("separate") && a.contains("--team-id") && a.contains("--xcode-workspace") && a[a.firstIndex(of: "--platform")! + 1] == "ios", "\(a)")
+    check(!a.contains("-o") && !a.contains("--no-keep-extracted"), "what a prepared project cannot take: \(a)")
+    var t = BuildTranscript()
+    t.apply(.say("[1] app name: G; version: 1.0; bundle ID: org.x.y; app: /a"))
+    t.apply(.say("[2] game project: /a b/xcode/DmIOS.xcodeproj"))
+    check(t.bundleID == "org.x.y" && t.project == "/a b/xcode/DmIOS.xcodeproj", "\(t.bundleID ?? "") \(t.project ?? "")")
 }
 
 func checkArguments() {
@@ -104,6 +232,22 @@ func checkScan(_ tmp: URL) throws {
     try fm.createDirectory(at: g.appendingPathComponent("0100AAAA00000000_build"), withIntermediateDirectories: true)
     check(GameScan.spaceNeeded(try GameScan.scan(g)) == 0, "a build folder is there already")
 
+    // A folder with two games: each sees its own files, versions and size
+    let two = tmp.appendingPathComponent("two")
+    try fm.createDirectory(at: two, withIntermediateDirectories: true)
+    try pfs0(["a.nca"]).write(to: two.appendingPathComponent("First Game [0100AAAA00000000][v0].nsp"))
+    try pfs0(["a.nca"]).write(to: two.appendingPathComponent("First Game [0100AAAA00000800][v65536].nsp"))
+    try pfs0(["a.nca"]).write(to: two.appendingPathComponent("Second [0100BBBB00000000][v0].nsp"))
+    let both = try GameScan.scan(two)
+    let first: UInt64 = 0x0100AAAA00000000, second: UInt64 = 0x0100BBBB00000000
+    check(both.titles == [first, second], "two games")
+    check(both.packages(of: first).count == 2 && both.packages(of: second).count == 1 && both.packages(of: nil).count == 3, "each game's files")
+    check(both.versions(of: first) == [0, 65536] && both.versions(of: second) == [0], "each game's versions")
+    check(both.bytes(of: second) < both.bytes(of: first) && both.bytes(of: nil) == both.bytes, "each game's size")
+    check(both.fileName(of: second) == "Second" && both.fileName(of: first) == "First Game", "names from the files")
+    try fm.createDirectory(at: two.appendingPathComponent("0100AAAA00000000_build"), withIntermediateDirectories: true)
+    check(GameScan.spaceNeeded(both, title: first) == 0 && GameScan.spaceNeeded(both, title: second) > 0, "only the first one was built")
+
     // A package that says nothing about itself, and a merged one
     let bare = tmp.appendingPathComponent("bare")
     try fm.createDirectory(at: bare, withIntermediateDirectories: true)
@@ -155,7 +299,7 @@ func runFake(_ script: String, _ python: String, _ args: [String], cancelAfter: 
     var t = BuildTranscript(), result: (Int32, String)?
     let runner = BuildRunner()
     do {
-        try runner.start(python: python, script: URL(fileURLWithPath: script), arguments: args, cwd: URL(fileURLWithPath: "/"),
+        try runner.start(tool: python, arguments: [script] + args, cwd: URL(fileURLWithPath: "/"),
                          onLine: { line in if let e = BuildEvent.parse(line) { t.apply(e) } }, onExit: { result = ($0, $1) })
     } catch {
         check(false, "the script did not start: \(error)")
@@ -196,10 +340,14 @@ struct BuilderCheck {
     @MainActor static func main() throws {
         let args = CommandLine.arguments
         let fake = args[1], python = args[2], tmp = URL(fileURLWithPath: args[3])
+        Lang.selected = .en   // the checks read the English texts, whatever this Mac's language is
+        checkStrings()
         checkXcode()
+        checkDevice()
         checkArguments()
         checkEvents()
         try checkScan(tmp)
+        try checkControls(tmp)
         checkRun(fake, python, tmp)
         print(failures == 0 ? "ok" : "\(failures) failed")
         exit(failures == 0 ? 0 : 1)

@@ -14,6 +14,12 @@ In 3D, the right stick (the camera in most games) is not drawn: swipe on the rig
 
 A connected game controller hides the touch controls and keeps every button.
 
+**Your own arrangement.** Hold the **2D** / **3D** button for a moment: drag a control to move it, put a second finger down to pinch it larger or smaller, **Hide all** hides them (the button then shows `…`; tap it to bring them back), **Reset** restores them. The settings screen also sets the size and opacity of all of them.
+
+## Other controls
+
+The settings screen has **Invert camera up and down** and **Swap A with B and X with Y**. On the Mac it also has **Trackpad turns the camera**: a two-finger swipe over the game is the right stick. [NXNative Builder](development.md#nxnative-builder) moves each key and each controller button: `DM_KEYMAP` and `DM_PAD_MAP` in `env.txt` ([the list](env_switches.tsv)).
+
 ## Rumble
 
 Game vibration uses the iPhone's haptic engine or a compatible connected controller. Controllers with separate left/right haptic outputs keep those effects separate. The settings screen's **Game rumble** and **Rumble strength** control it independently of **Touch feedback**. Phone rumble approximates the Switch's effects; physical feel and controller compatibility still need device testing.
