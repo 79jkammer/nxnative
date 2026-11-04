@@ -58,6 +58,7 @@ typedef struct thr {
     _Atomic int sleeping;      // inside SleepThread's timed sleep (not runnable; used by dm_yield_to_core_peers)
     int yield_pending;         // this caller woke a higher-priority thread pinned to its core: hand off before returning to guest code
     _Atomic uint64_t hand_epoch;   // this thread's current handoff: threads it makes runnable belong to it until its next thread SVC returns (svc_thread)
+    struct thr *behind;        // the pinned starter of the same core and priority this thread queues behind until the starter blocks (start_behind)
     struct thr *start_by; uint64_t start_epoch;   // the lower-priority thread on this core whose StartThread holds for this thread, and that handoff (dm_thread_service_request)
     struct { struct thr *by; uint64_t epoch; } hand[4]; int nhand;   // the handoffs this thread was made runnable for (its waker's, then those the waker belonged to), until it blocks (note_runnable / hand_leave)
     _Atomic int *host_work;    // points at the thread's dm_host_work (registered when the thread starts)
@@ -92,6 +93,7 @@ static thr_t *g_all;
 extern __thread _Atomic int dm_host_work;   // declared in hle.h too; defined in hle_nvn.c
 static _Atomic uint64_t g_preempt_n, g_preempt_ns;   // same-core handoffs: count and total wait (svc_thread)
 static int g_core_preempt;   // also check already-runnable peers after every thread SVC (profile / DM_PREEMPT)
+static int g_start_behind;   // a started thread queues behind its pinned starter of the same core and priority (profile / DM_START_BEHIND)
 
 static pthread_mutex_t G = PTHREAD_MUTEX_INITIALIZER;
 #define MAX_H 4096
@@ -320,6 +322,20 @@ static void qos_apply(thr_t *t) {   // on the thread itself, holding G (prio and
 // A host helper thread (audio notify / silent sink, vsync, movie decode) created from a guest thread inherits that thread's class; under DM_QOS_MAP it sets its own instead
 void dm_host_helper_qos(qos_class_t q) { if (g_qos_map) pthread_set_qos_class_self_np(q, 0); }
 static const char *thr_name(thr_t *t, char *buf, size_t n);
+// A workaround for a game's own race (profile key start_behind; docs/reference/threads.md): a game's loading thread and its main thread use one graphics device, unlocked, in the moments
+// after StartThread. On Horizon the new thread starts behind its starter on their core; here it would run at once, beside it. So it waits until the starter blocks; bounded, as the starter may spin on it
+#define START_BEHIND_MAX_NS 20000000
+static void start_behind(thr_t *t) {
+    pthread_mutex_lock(&G);
+    uint64_t t0 = now_ns();
+    while (t->behind && thr_runnable(t->behind) && now_ns() - t0 < START_BEHIND_MAX_NS) {
+        pthread_mutex_unlock(&G);
+        { struct timespec ts = {0, 50000}; nanosleep(&ts, 0); }
+        pthread_mutex_lock(&G);
+    }
+    t->behind = NULL;
+    pthread_mutex_unlock(&G);
+}
 static void *thread_main(void *p) {
     thr_t *t = p;
     pthread_setspecific(g_keythr, t);
@@ -335,11 +351,13 @@ static void *thread_main(void *p) {
     guest_gate_stack(1);   // the guest runs on its own stack from dm_thread_enter on: this pthread's stack below this frame is where its SVCs run
     pthread_mutex_lock(&G); while (!t->started) pthread_cond_wait(&t->cv, &G); pthread_mutex_unlock(&G);
     { char nb[48], hn[64]; snprintf(hn, sizeof hn, "%#x %s", t->handle, thr_name(t, nb, sizeof nb)); pthread_setname_np(hn); }   // the guest's name (set before StartThread) for sample / Instruments
+    start_behind(t);
     dm_thread_enter(t->entry, t->arg, t->stack_top);   // Does not return: the guest must exit through ExitThread
     die("guest thread entry returned");
 }
 static void thr_free(thr_t *t) {   // Holding G; unlink from the all-threads chain and free
     for (thr_t **p = &g_all; *p; p = &(*p)->all) if (*p == t) { *p = t->all; break; }
+    for (thr_t *u = g_all; u; u = u->all) if (u->behind == t) u->behind = NULL;
     for (thr_t *u = g_all; u; u = u->all)   // no handoff entry may point at the freed object (note_runnable reads the waker's epoch)
     {
         for (int i = 0; i < u->nhand; ) if (u->hand[i].by == t) u->hand[i] = u->hand[--u->nhand]; else i++;
@@ -511,6 +529,7 @@ uint32_t svc_thread_main_init(void) {
     pthread_key_create(&g_keythr, NULL);
     qos_map_init();
     { const char *e = getenv("DM_PREEMPT"); g_core_preempt = e ? atoi(e) != 0 : DM_GAME_CORE_PREEMPT; }
+    { const char *e = getenv("DM_START_BEHIND"); g_start_behind = e ? atoi(e) != 0 : DM_GAME_START_BEHIND; }
     pause_install();
     hitch_init();
     thr_t *t = calloc(1, sizeof *t);
@@ -930,8 +949,9 @@ static int svc_thread_impl(int num, uint64_t *regs) {
         pthread_mutex_lock(&G);
         thr_t *t = h_get((uint32_t)regs[0], O_THREAD);
         if (t) {
-            t->started = 1; pthread_cond_signal(&t->cv); note_runnable(t);
             thr_t *self = pthread_getspecific(g_keythr);
+            if (self && g_start_behind && self->mask == 1ull << self->core && t->core == self->core && t->prio == self->prio) t->behind = self;
+            t->started = 1; pthread_cond_signal(&t->cv); note_runnable(t);
             if (self && self->yield_pending) { t->start_by = self; t->start_epoch = atomic_load(&self->hand_epoch); }   // this start holds its caller: dm_thread_service_request
         }
         pthread_mutex_unlock(&G);

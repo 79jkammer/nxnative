@@ -24,7 +24,7 @@
 #   · Trinity packs (Game Freak, Pokémon Legends: Z-A): BNSH inside the files of arc/data.trpfs (Oodle Mermaid, decoded by the game's own decoder in the Mac host), see trpfs_jobs and trinity_shaders
 #   · SPK (Capcom's MT Framework, The Great Ace Attorney Chronicles): the shader package inside an ARC archive (zlib entries), code area + control section per shader, see mtarc_members and mtspk_shaders
 #   · BEA (NintendoWare Bezel Engine archives, Big Brain Academy: Brain vs. Brain): BNSH in the .bfsha entries of the archives (zstd entries), see bea_members
-#   · MGFX (MonoGame effects, Celeste, Bastion): the effects in its XNB files and SpriteBatch's in main, each shader a control section and a code area (version 5: a whole GLSLC output), see mgfx_effect
+#   · MGFX (MonoGame effects, Celeste, Bastion, Shredder's Revenge): the effects in its XNB files (raw deflate in .zxnb files: zxnb) and SpriteBatch's in main, each shader a control section and a code area (version 5: a whole GLSLC output), see mgfx_effect
 #   · dvdbnd (FromSoftware, Dark Souls Remastered): GLSLC outputs in the BND3 archives (DCX zlib entries) of the .bdt files, indexed by the .bhd5 beside each, see bhd5_entries and bdt_shaders
 #   · data.arc (Super Smash Bros. Ultimate, smash_arc.py): GLSLC outputs in its SSBH shader databases and BNSH in its effects and UI layouts, each of its current files (zstd) scanned, see smash_arc_jobs
 #   · PKZ (PlatinumGames, Bayonetta 3): shader objects (VSO / PSO / CSO / HSO / DSO, a control section and a code area each) in the DAT archives of the PKZ entries (Oodle Kraken, decoded by the
@@ -1420,6 +1420,7 @@ class _Rd:   # a little-endian reader over bytes, with .NET's BinaryReader strin
             if b < 0x80: return s.raw(n)
 
 MGFX = b'MGFX'
+XNB_NAMES = ('.xnb', '.zxnb')
 def mgfx_effect(d, p, label):
     """A MonoGame effect at d[p:] (Celeste: MonoGame for the Switch, its C# compiled to C++ by Sickhead's BRUTE; 13 in Content/Effects/*.xnb, whose XNB 'S' files are read by EffectReader,
     and SpriteBatch's in main): 'MGFX', u8 version 8, u8 profile, u32 effect key; the constant buffers {name, i16 size, u8 count, {u8 parameter, u16 offset} each}; the shaders {u8 vertex (1) or
@@ -1428,23 +1429,26 @@ def mgfx_effect(d, p, label):
     techniques and passes, read to the end so that a misread shows: a pass names its vertex and pixel shader by index, 255 for none. → [(label, stage, ctl, code)], or None when the header is not
     version 8's or its first shader is not an NVN one (four bytes 'MGFX' anywhere in a main).
     Version 5 (Bastion: MonoGame 3.0's EffectReader, 24 XNB files in Content/Effects and 7 .dx11.mgfxo files in Resources) has no effect key and no constant buffer names, each shader's
-    bytecode is a whole GLSLC output of one stage, and its shaders are written in MonoGame's DirectX layout: no sampler names and no attribute list"""
-    v5 = d[p + 4:p + 5] == b'\x05'
-    if d[p + 4:p + 5] != b'\x08' and not v5: return None
+    bytecode is a whole GLSLC output of one stage, and its shaders are written in MonoGame's DirectX layout: no sampler names and no attribute list.
+    Version 10 (Teenage Mutant Ninja Turtles: Shredder's Revenge) has version 8's layout, with the counts of constant buffers, their parameters, shaders, parameters, annotations, techniques and passes,
+    the constant buffers' parameter indices and the passes' shader indices (no shader: -1) as i32; a shader's own counts stay u8. 'MGFX' follows the effect again"""
+    v5, v10 = d[p + 4:p + 5] == b'\x05', d[p + 4:p + 5] == b'\x0a'
+    if d[p + 4:p + 5] != b'\x08' and not v5 and not v10: return None
     r = _Rd(d, p + (6 if v5 else 10))
+    count = (lambda: r.un('<i')) if v10 else r.u8
     try:
-        for _ in range(r.u8()):
+        for _ in range(count()):
             if not v5: r.str()
-            r.raw(2); r.raw(3 * r.u8())
-        if d[r.p + 6:r.p + 10] != b'\x91\x68\x86\x19' if v5 else d[r.p + 10:r.p + 14] != CTL_MAGIC: return None   # shader count, then the first shader's stage, length (and control length)
-    except IndexError: return None
+            r.raw(2); r.raw((6 if v10 else 3) * count())
+        if d[r.p + 6:r.p + 10] != b'\x91\x68\x86\x19' if v5 else d[r.p + (13 if v10 else 10):r.p + (17 if v10 else 14)] != CTL_MAGIC: return None   # shader count, then the first shader's stage, length (and control length)
+    except (IndexError, struct.error): return None
     def no_annotations():
-        if r.u8(): red(f'{label} MGFX @{p:#x}: annotations (MonoGame writes none)')
+        if count(): red(f'{label} MGFX @{p:#x}: annotations (MonoGame writes none)')
     out = []
-    for i in range(r.u8()):
+    for i in range(count()):
         vs, n = r.u8(), r.un('<I')
         if r.p + n > len(d):   # a shader whose length runs past the data: a stray 'MGFX' in other content, not an effect
-            if label.endswith('.xnb'): red(f'{label} MGFX @{p:#x}: shader {i} claims {n:#x} bytes past the end of the file')
+            if label.endswith(XNB_NAMES): red(f'{label} MGFX @{p:#x}: shader {i} claims {n:#x} bytes past the end of the file')
             return None
         bc = r.raw(n)
         if v5:
@@ -1468,7 +1472,7 @@ def mgfx_effect(d, p, label):
         if not v5:
             for _ in range(r.u8()): r.str(); r.raw(4)
     def params():   # {u8 class, u8 type, name, semantic, annotations, u8 rows, u8 columns, elements, struct members, the value when it has neither} each → how many
-        n = r.u8()
+        n = count()
         for _ in range(n):
             typ = r.raw(2)[1]; r.str(); r.str(); no_annotations()
             rows, cols = r.u8(), r.u8()
@@ -1477,21 +1481,23 @@ def mgfx_effect(d, p, label):
             elif typ == 4: r.str()
         return n
     params()
-    for _ in range(r.u8()):   # techniques
+    for _ in range(count()):   # techniques
         r.str(); no_annotations()
-        for _ in range(r.u8()):   # passes: name, annotations, vertex / pixel shader index, then the blend, depth-stencil and rasterizer states when present
-            r.str(); no_annotations(); v, f = r.u8(), r.u8()
-            if v != 255 and v >= len(out) or f != 255 and f >= len(out): red(f'{label} MGFX @{p:#x}: a pass names shader {v} / {f} of {len(out)}')
+        for _ in range(count()):   # passes: name, annotations, vertex / pixel shader index, then the blend, depth-stencil and rasterizer states when present
+            r.str(); no_annotations(); v, f = (r.un('<i'), r.un('<i')) if v10 else (r.u8(), r.u8())
+            none = -1 if v10 else 255
+            if v != none and not 0 <= v < len(out) or f != none and not 0 <= f < len(out): red(f'{label} MGFX @{p:#x}: a pass names shader {v} / {f} of {len(out)}')
             for n in (18, 25, 12):
                 if r.u8(): r.raw(n)
     # in Bastion's 24 XNB files the length in front of 'MGFX' (EffectReader reads that many bytes) runs to the file's end, about 0xff0 bytes past the effect, all zeros
-    if r.p > len(d) or label.endswith('.xnb') and d[r.p:].strip(b'\0'): red(f'{label} MGFX @{p:#x}: the effect ends at {r.p:#x}, the file at {len(d):#x}')
+    if v10 and d[r.p:r.p + 4] == MGFX: r.p += 4
+    if r.p > len(d) or label.endswith(XNB_NAMES) and d[r.p:].strip(b'\0'): red(f'{label} MGFX @{p:#x}: the effect ends at {r.p:#x}, the file at {len(d):#x}')
     return out
 
 def mgfx_shaders(d, label):
     out = []
     for m in re.finditer(MGFX, d): out += mgfx_effect(d, m.start(), label) or []
-    if label.endswith('.xnb') and b'EffectReader' in d[:0x200] and not out: red(f'{label}: an XNB effect without an MGFX version 5 or 8 effect of NVN shaders')
+    if label.endswith(XNB_NAMES) and b'EffectReader' in d[:0x200] and not out: red(f'{label}: an XNB effect without an MGFX version 5, 8 or 10 effect of NVN shaders')
     return out
 
 def rel_targets(img):
@@ -2083,6 +2089,13 @@ def ungzip(d, label):
     if len(out) > limit: red(f'{label}: gzip stream expands beyond its {limit:#x} byte budget')
     return out
 
+def zxnb(d, label):
+    """An XNB file in a raw deflate stream, which has no magic of its own, so the name tells (.zxnb, Shredder's Revenge: 1,547, its 13 effects among them); bounded like ungzip"""
+    limit = max(GZIP_FLOOR, NEST * len(d)); z = zlib.decompressobj(-15)
+    try: out = z.decompress(d, limit + 1)
+    except zlib.error as e: red(f'{label}: invalid deflate stream ({e})')
+    if not z.eof or len(out) > limit or out[:3] != b'XNB': red(f'{label}: not a whole deflate stream of an XNB file within {limit:#x} bytes')
+    return out
 
 def yaz0(s, label='Yaz0'):
     """Yaz0 decompression (Super Mario 3D World + Bowser's Fury: almost all of RomFS is .szs = SARC wrapped in Yaz0). Pure Python runs at about 20–45 MB/s per core, under a minute for the whole 4.7 GB RomFS in parallel, and needs no extra dependency.
@@ -2609,6 +2622,7 @@ def scan_file_in(args):
         with open(path, 'rb') as f: d = f.read()
     if d[:3] == b'\x1f\x8b\x08':   # standard gzip: Skyward Sword HD's Shaders.arc.gz wraps paired GLSLC outputs
         d = ungzip(d, '/' + rel); head = d[:16]   # later format probes inspect decoded bytes, not the gzip timestamp
+    if path.endswith('.zxnb'): d = zxnb(d, '/' + rel); head = d[:16]
     if head[4:5] == b'\x78' and path.endswith('.gz') and (z := gust_gz(d)) is not None: d = z   # Gust's chunked zlib (gust_gz)
     # Monolith also ships these containers loose, without an ARH/ARD archive
     # (Xenoblade DE). The generic prefilter below otherwise drops even HCPS.

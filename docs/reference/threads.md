@@ -20,6 +20,13 @@ Guest threads, their synchronization and how the host schedules them. Each entry
 - **Check:** `make -C dm/host/tests GAME=010038B015560000 preempt` delays the child's host dispatch by 1 ms and 20 ms. With `DM_PREEMPT=0`, both delayed starts failed before the fix. Afterward both `DM_PREEMPT=0` and `1` pass; the broader mode already supplied the handoff before this correction. Equal-priority, other-core, migratable, host-helper, suspended and host-GPU-work children do not hold up the caller.
 - **Found on:** the threading audit of [FINAL FANTASY TACTICS](../../dm/games/010038B015560000/README.md#threads); its affected workers are lower priority and initially migratable, so this correction does not remove its local wake cut.
 
+### A started thread queues behind its pinned starter
+
+- **Symptom:** `[RED] BeginRecording re-entered`, then `CRASH sig=11 addr=0x40` in MonoGame's `ApplyRenderTargets` (a null `RenderTarget` right after `SetRenderTarget` set one), on a thread the game has just started to load a screen, in most runs and not with `DM_PROBE`.
+- **Cause:** the game's own race: its loading thread (priority 44, ideal core 0, mask 0x7) and its main thread (priority 44, pinned to core 0) use one MonoGame `GraphicsDevice`, which has no lock. Main clears the current render target array while the loader reads it. Here the new thread runs the moment `StartThread` signals it, on Apple cores that reach this code within main's frame. What keeps it from crashing on a Switch is not known: Horizon queues the thread behind main on core 0, and an idle core may still take it.
+- **Fix:** a workaround, in the profile key `start_behind`: a thread started on its starter's core at its priority, by a starter pinned to that core, waits before its first instruction until the starter blocks, at most 20 ms (`start_behind`, `hle_thread.c`). The bound is there because the starter may spin on the new thread. It moves the loader's first graphics calls into main's wait for the display; the race itself stays in the game. The key is off by default because the local checks cannot show what it does to other games.
+- **Found on:** [Teenage Mutant Ninja Turtles: Shredder's Revenge](../../dm/games/0100FE701475A000/README.md): 5 crashes in 6 runs before, none in 6 after.
+
 ### Core mask changes move the ideal core into the new mask
 
 - **Symptom:** per-core job queues never drained.

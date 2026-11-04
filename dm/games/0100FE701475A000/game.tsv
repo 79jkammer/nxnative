@@ -1,0 +1,46 @@
+# Teenage Mutant Ninja Turtles: Shredder's Revenge (Dotemu / Tribute Games), SDK 13.3.2, NVN.
+# Started from the NSP script's provisional profile; what was added and why is in README.md.
+
+# ---- Identity ----
+title_id	0100FE701475A000
+program_id	0100FE701475A000
+
+# ---- App ----
+name	Teenage Mutant Ninja Turtles: Shredder's Revenge
+ipa	TeenageMutantNinjaTurtlesShreddersRevenge.ipa
+app_category	public.app-category.action-games
+
+# ---- Versions ----
+build	v0	1.0.9	main=24e483af4f3bed10685600eedff3d844	subsdk0=a8cb97803f7f442a3b6cce1c7cd4ee4a	subsdk1=357efc198e728cb5d55265aff304f03c	sdk=357efc198e728cb5d55265aff304f03c
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# not loaded, main takes nothing from them the host does not supply: subsdk2 (GLSLC)
+modules	main subsdk0 subsdk1 sdk
+romfs_marker	Content/Audio/SFXPack.pbn
+zip_store	.mp4:.nro:.nro_old:.nro_old2:.nro_old3:.ogv:.opus:.pbn:.pdb:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB − 8 MB of bss (counted as used memory): a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Threads and online services ----
+# the game's loading thread and main thread share one graphics device, unlocked, just after StartThread (README.md)
+start_behind	on
+# the game does not expect EOS_Platform_Create to fail (README.md)
+eos_offline	on
+
+# ---- Shader split ----
+# MonoGame effects, MGFX version 10: 64 shaders in main, 24 in Content/Shaders/*.zxnb
+shader_groups	/Content/=content /nro/=nro /.nrr/=nrr
+shader_note	Teenage Mutant Ninja Turtles: Shredder's Revenge shaders
+
+# ---- After the rewrite ----
+# used memory for the current rewritten modules, at least the default 64 MB
+mem_used	0xabd4000

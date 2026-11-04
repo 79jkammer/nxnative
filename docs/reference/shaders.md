@@ -283,9 +283,17 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 
 - **How it is stored:** the 13 XNB files in `Content/Effects` (XNB platform `S`, uncompressed, read by `EffectReader`) each hold one MGFX effect, and `main` holds SpriteBatch's built-in one; no other file and no GLSLC output. A compressed XNB (MonoGame's LZX flag 0x80 or LZ4 flag 0x40, as in Stardew Valley) is decompressed first (`xnb_decompress`).
 - **Layout:** MGFX version 8 is MonoGame's own layout: `MGFX`, u8 version, u8 profile, u32 effect key, the constant buffers, then each shader as u8 vertex (1) / pixel (0), u32 length, the bytecode (u32 control length, the control section, u32 code length, the code area: GLSLC's output without its header), the samplers, the constant buffer indices and an attribute list (as MonoGame's OpenGL backend writes it), then the parameters and the techniques with their passes (`mgfx_effect`).
-- **Reader:** the reader parses every effect to its end, which checks the layout; in `main`, four bytes `MGFX` count only when version 8 and a control section follow.
+- **Reader:** the reader parses every effect to its end, which checks the layout; in `main`, four bytes `MGFX` count only when a version the reader knows and a control section follow.
 - **Pairing:** a pass names its vertex and pixel shader by index, 255 for none, and 10 of the 13 effects have no vertex shader: SpriteBatch binds its own and the effect's pass only replaces the pixel shader. Vertex and pixel shaders therefore combine across effects, and they are paired as single-stage programs.
 - **Found on:** [Celeste](../../dm/games/01002B30028F6000/README.md) (MonoGame for the Switch, its C# compiled to C++ by Sickhead's BRUTE): 26 shaders (20 pixel, 6 vertex), all with Mario's binding layout; every binding decodes. [Stardew Valley](../../dm/games/0100E65002BB8000/README.md) (compressed XNB).
+
+### MGFX version 10 effects in raw deflate `.zxnb` files
+
+- **Symptom:** `the shader split found no shaders in main or the RomFS` on a MonoGame game whose RomFS holds `.zxnb` files, with `[RED] main control section @… : no code area` lines in `shader_split.log`.
+- **Cause:** two things hide the effects. A `.zxnb` file is an XNB file in a raw deflate stream, which has no magic, so the scan saw noise. MGFX version 10 (`MonoGame.Framework, Version=2.22.5.0` in the XNB, profile byte 40) widens version 8's counts of constant buffers, their parameters, shaders, parameters, annotations, techniques and passes to i32, as well as the constant buffers' parameter indices and the passes' shader indices (no shader: -1). A shader's own counts stay u8, and `MGFX` follows the effect again, so in `main` one effect's end touches the next one's start. The reader took neither version 10 nor the effects in `main`, whose control sections then reached the loose-section reader, which found no code area for them.
+- **Fix:** `shader_split.py` inflates a file named `.zxnb` (`zxnb`, bounded like `ungzip`; it must be one whole stream of an XNB file), and `mgfx_effect` reads version 10 to the effect's end.
+- **Found on:** [Teenage Mutant Ninja Turtles: Shredder's Revenge](../../dm/games/0100FE701475A000/README.md): 88 shaders (35 pixel, 53 vertex), 64 from six effects in `main` and 24 from the 13 effects in `Content/Shaders`, and no red line in the split.
+- **Check:** `test_split_mgfx10.py` uses authored version 8 and version 10 effects, plain and deflated.
 
 ### MGFX version 5 effects (MonoGame 3.0)
 
