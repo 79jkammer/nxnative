@@ -31,7 +31,7 @@ Community projects build on nxnative with Mac apps that turn your games into app
 - [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)
 - [LumaNX](https://github.com/Xc1Ym/LumaNX)
 
-This repository has a small one too, NXNative Builder: add your game and `prod.keys` to its window and press Build. It says what the Mac is missing and installs it, and shows the build's progress. Your files stay where they are. Build it once with `python3 scripts/build_builder_app.py --open` ([NXNative Builder](docs/development.md#nxnative-builder)).
+This repository has a small one too, Slotless: add your game and `prod.keys` to its window and press Build. It says what the Mac is missing and installs it, and shows the build's progress. Your files stay where they are. It can also install a game on a connected iPhone with a free Apple ID, for 7 days at a time. Build it once with `python3 scripts/build_builder_app.py --open` ([Slotless](docs/development.md#slotless)).
 
 ### Build from the command line
 

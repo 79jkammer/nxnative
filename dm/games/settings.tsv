@@ -22,7 +22,14 @@ DM_PRESENT_UPSCALE	choice	off=Standard,metalfx=MetalFX	off	always	Game	Upscaling
 DM_LANG	choice	languages	build:DM_LANG	languages>1	Game	Game language		level=basic
 DM_FULLSCREEN	choice	0=Window,1=Fullscreen	0	platform:mac	Game	Display mode		level=basic
 DM_SHOW_FPS	toggle	-	build:DM_SHOW_FPS	platform:ios	Game	Frame-rate counter
+DM_TOUCH_CONTROLS	toggle	-	1	platform:ios	Controls	Touch controls	Hold the 2D / 3D button in the game to move and resize them.	level=basic
+DM_TOUCH_SCALE	range	0.7:1.3:0.05	1.0	platform:ios	Controls	Touch control size		needs=DM_TOUCH_CONTROLS=1
+DM_TOUCH_OPACITY	range	0.2:1.0:0.05	1.0	platform:ios	Controls	Touch control opacity		needs=DM_TOUCH_CONTROLS=1
 DM_TOUCH_HAPTICS	toggle	-	1	platform:ios	Controls	Touch feedback
+DM_TRACKPAD_CAMERA	toggle	-	0	platform:mac	Controls	Trackpad turns the camera	Swipe with two fingers over the game.	level=basic
+DM_TRACKPAD_SPEED	range	0.2:3:0.1	1.0	platform:mac	Controls	Trackpad speed		needs=DM_TRACKPAD_CAMERA=1
+DM_CAMERA_INVERT_Y	toggle	-	0	always	Controls	Invert camera up and down
+DM_PAD_SWAP_AB	toggle	-	0	always	Controls	Swap A with B and X with Y	On a controller.
 DM_RUMBLE	toggle	-	1	always	Controls	Game rumble		level=basic
 DM_RUMBLE_GAIN	range	0:3:0.1	1.0	always	Controls	Rumble strength		needs=DM_RUMBLE=1
 DM_RUMBLE_MIN	range	0:0.9:0.05	0	always	Controls	Rumble cutoff

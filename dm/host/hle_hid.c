@@ -7,6 +7,7 @@
 #include "hle.h"
 #include "hle_haptics.h"
 #include "dm_input.h"
+#include "input_map.h"
 #include "front.h"
 #include <stdatomic.h>
 #include <unistd.h>
@@ -48,12 +49,30 @@ static void shake_note(void) {
     if (on) { if (t >= atomic_load(&g_shake_end)) atomic_store(&g_shake_t0, t); atomic_store(&g_shake_end, UINT64_MAX); }
     else { uint64_t t0 = atomic_load(&g_shake_t0); atomic_store(&g_shake_end, t0 + ((t - t0) / SHAKE_CYCLE_NS + 1) * SHAKE_CYCLE_NS); }
 }
+// The player's controls (input_map.h): DM_PAD_MAP / DM_PAD_SWAP_AB for what a controller's buttons press, DM_CAMERA_INVERT_Y for every source's right stick. Read once, before the first input.
+static uint8_t g_pad_map[IM_BUTTONS];
+static int g_invert_ry;
+static void input_map_init(void) {
+    static atomic_flag once = ATOMIC_FLAG_INIT;
+    static _Atomic int ready;
+    if (atomic_load(&ready)) return;
+    if (atomic_flag_test_and_set(&once)) { while (!atomic_load(&ready)) {} return; }
+    const char *swap = getenv("DM_PAD_SWAP_AB"), *inv = getenv("DM_CAMERA_INVERT_Y");
+    pad_map_parse(getenv("DM_PAD_MAP"), swap && atoi(swap), g_pad_map);
+    g_invert_ry = inv && atoi(inv);
+    atomic_store(&ready, 1);
+}
 void dm_input_set(uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
+    input_map_init();
+    if (g_invert_ry) ry = -ry;
     uint64_t old = atomic_exchange(&g_btn, buttons); atomic_fetch_or(&g_latch, buttons & ~old); atomic_store(&g_axes, pack(lx, ly, rx, ry));
     shake_note();
 }
 void dm_pad_set_player(int p, uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
     if (p < 0 || p >= DM_PLAYERS) return;
+    input_map_init();
+    buttons = pad_map_apply(buttons, g_pad_map);
+    if (g_invert_ry) ry = -ry;
     uint64_t old = atomic_exchange(&g_pad_btn[p], buttons); atomic_fetch_or(&g_pad_latch[p], buttons & ~old); atomic_store(&g_pad_axes[p], pack(lx, ly, rx, ry));
     if (!p) shake_note();
 }

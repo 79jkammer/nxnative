@@ -14,6 +14,7 @@
 #import <GameController/GameController.h>
 #include "dm.h"
 #include "dm_input.h"
+#include "input_map.h"
 #include "front.h"
 #include "hle.h"
 #include "pad_slots.h"
@@ -107,33 +108,34 @@ static void cursor_hide_for_input(void) {
     NSView *v = g_win.contentView;
     if (NSPointInRect([v convertPoint:g_win.mouseLocationOutsideOfEventStream fromView:nil], v.bounds)) [NSCursor setHiddenUntilMouseMoves:YES];
 }
+// The trackpad's two-finger swipe as the right stick (DM_TRACKPAD_CAMERA, DmGameView scrollWheel): -1 to 1 on each axis while the fingers move
+static float g_tp_x, g_tp_y;
+static int32_t stick_sum(int digital, float analog) { return (int32_t)fmaxf(-32767.f, fminf(32767.f, digital * 32767.f + analog * 32767.f)); }
 static void push(void) {
     int32_t lx = (g_d - g_a) * 32767, ly = (g_w - g_s) * 32767;
-    int32_t rx = (g_rr - g_rl) * 32767, ry = (g_ru - g_rd) * 32767;
-    dm_input_set(g_btn, lx, ly, rx, ry);
+    dm_input_set(g_btn, lx, ly, stick_sum(g_rr - g_rl, g_tp_x), stick_sum(g_ru - g_rd, g_tp_y));
 }
-static int key_bit(unsigned short code) {
-    switch (code) {
-        case 38: return 0;  case 40: return 1;  case 32: return 2;  case 34: return 3;    // J K U I → A B X Y
-        case 3: return 4;   case 5: return 5;                                            // F G → press stick
-        case 12: return 6;  case 14: return 7;  case 6: return 8;   case 8: return 9;    // Q E Z C → L R ZL ZR
-        case 36: return 10; case 48: return 11;                                          // Return Tab → + −
-        case 123: return 12; case 126: return 13; case 124: return 14; case 125: return 15; // ← ↑ → ↓
-    }
-    return -1;
-}
+// The key of each action: J K U I → A B X Y, F G → press a stick, Q E Z C → L R ZL ZR, Return Tab → + −, the arrows → the D-pad, WASD → the left stick, Space → shaken while held; DM_KEYMAP moves them (input_map.h)
+static uint8_t g_keys[IM_KEYS];
 static void on_key(NSEvent *e, int down) {
     if (!g_input_on) return;
+    static int ready;
+    if (!ready) { ready = 1; key_map_parse(getenv("DM_KEYMAP"), g_keys); }
     unsigned short c = e.keyCode;
-    switch (c) { case 13: g_w = down; break; case 0: g_a = down; break; case 1: g_s = down; break; case 2: g_d = down; break; }
     // An arrow key pressed with Shift held is the right stick until it is released; without Shift, the D-pad. The keyboard had no right stick: a 3D game's camera
     // could be turned only with a controller (Donkey Kong Bananza)
     int *rs = c == 123 ? &g_rl : c == 126 ? &g_ru : c == 124 ? &g_rr : c == 125 ? &g_rd : NULL;
     if (rs && (down ? (e.modifierFlags & NSEventModifierFlagShift) != 0 : *rs)) { *rs = down; push(); return; }
-    int b = key_bit(c);
-    uint64_t m = b >= 0 ? 1ull << b : c == 49 ? DM_BTN_SHAKE : 0;   // Space: shaken while held
-    g_btn = down ? (g_btn | m) : (g_btn & ~m);
-    if (down && (m || c == 13 || c == 0 || c == 1 || c == 2)) cursor_hide_for_input();   // a key the game takes (WASD: the left stick)
+    if (c >= IM_KEYS || !g_keys[c]) return;
+    int a = g_keys[c] - 1;
+    int *stick = NULL;
+    switch (a) {
+        case IM_LSL: stick = &g_a; break; case IM_LSU: stick = &g_w; break; case IM_LSR: stick = &g_d; break; case IM_LSD: stick = &g_s; break;
+        case IM_RSL: stick = &g_rl; break; case IM_RSU: stick = &g_ru; break; case IM_RSR: stick = &g_rr; break; case IM_RSD: stick = &g_rd; break;
+    }
+    if (stick) *stick = down;
+    else { uint64_t m = a == IM_SHAKE ? DM_BTN_SHAKE : 1ull << a; g_btn = down ? (g_btn | m) : (g_btn & ~m); }
+    if (down) cursor_hide_for_input();   // a key the game takes
     push();
 }
 
@@ -302,6 +304,19 @@ static void pads_start(void) {
     dm_touch_set(&t, 1); g_mouse_down = 1;
 }
 - (void)mouseUp:(NSEvent *)e { (void)e; if (g_mouse_down) { g_mouse_down = 0; dm_touch_set(NULL, 0); } }
+// A two-finger swipe on the trackpad turns the camera, as a right stick that rests when the fingers stop (DM_TRACKPAD_CAMERA=1; DM_TRACKPAD_SPEED scales it). Off by default: a game's own use of the mouse stays as it was.
+// The swipe's direction is the finger's whatever the system's natural scrolling setting is; momentum after the fingers leave does not count
+- (void)scrollWheel:(NSEvent *)e {
+    static int on = -1; static float speed = 1; static unsigned gen;
+    if (on < 0) { const char *c = getenv("DM_TRACKPAD_CAMERA"), *s = getenv("DM_TRACKPAD_SPEED"); on = c && atoi(c); if (s && atof(s) > 0) speed = (float)atof(s); if (on) LOG("front end: the trackpad turns the camera (speed %.1f)", speed); }
+    if (!on || !g_input_on || e.momentumPhase != NSEventPhaseNone) return;
+    float sign = e.isDirectionInvertedFromDevice ? 1.f : -1.f;
+    g_tp_x = fmaxf(-1.f, fminf(1.f, sign * (float)e.scrollingDeltaX * speed * 0.06f));
+    g_tp_y = fmaxf(-1.f, fminf(1.f, -sign * (float)e.scrollingDeltaY * speed * 0.06f));
+    push();
+    unsigned mine = ++gen;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ if (mine == gen) { g_tp_x = g_tp_y = 0; push(); } });
+}
 // The drawable follows the view in pixels: a layer assigned to a layer-backed view kept the drawable at the first window's 1280x720 in fullscreen too, so the game picture was
 // scaled down to it and up again by the compositor
 - (void)fitDrawable {

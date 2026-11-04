@@ -30,6 +30,9 @@ enum Host {
         return selected.isEmpty || selected.contains("CommandLineTools") ? apps.first?.path : nil
     }
 
+    // A tool that may sit outside the known folders, by its usual path
+    static func tool(_ name: String) -> String { which(name) ?? "/usr/bin/\(name)" }
+
     static func which(_ tool: String) -> String? {
         for dir in (environment["PATH"] ?? "").split(separator: ":") {
             let p = "\(dir)/\(tool)"
@@ -65,6 +68,13 @@ enum Host {
     }
 }
 
+extension Host {
+    // run, off the main thread
+    static func detached(_ exe: String, _ args: [String], cwd: URL, timeout: Double = 120) async -> Result? {
+        await Task.detached(priority: .userInitiated) { run(exe, args, cwd: cwd, timeout: timeout) }.value
+    }
+}
+
 struct EnvItem: Identifiable, Equatable {
     let id: String
     let title: String
@@ -72,18 +82,25 @@ struct EnvItem: Identifiable, Equatable {
     var detail: String
     var fix: String?          // a shell command
     var link: URL?            // where to get it when no command can
+    var linkTitle = L("Open the download page")
     var optional = false      // a warning only
+    var helper = false        // a tool the app can install by itself, named with the others for someone who does not know them
+    var terminal = false      // its fix needs Terminal: an installer that asks for a password
 }
 
 struct EnvReport: Equatable {
     var items: [EnvItem] = []
     var python: String?
+    var devices: [ConnectedDevice] = []
+    var teams: [AppleTeam] = []
     var problems: [EnvItem] { items.filter { !$0.ok && !$0.optional } }
     var warnings: [EnvItem] { items.filter { !$0.ok && $0.optional } }
     var fixes: [String] {
         var seen = Set<String>()
         return items.filter { !$0.ok }.compactMap(\.fix).filter { seen.insert($0).inserted }
     }
+    var fixSteps: [(title: String, command: String)] { items.filter { !$0.ok && !$0.terminal && $0.fix != nil }.map { ($0.title, $0.fix ?? "") } }
+    var needsTerminal: Bool { items.contains { !$0.ok && $0.terminal } }
 }
 
 struct PythonProbe: Decodable {
@@ -129,41 +146,45 @@ enum EnvCheck {
     static func run(repo: URL, target: BuildTarget, preferredPython: [String], venv: String, needsNsz: Bool, allowOtherMetal: Bool) -> EnvReport {
         var r = EnvReport()
         let v = ProcessInfo.processInfo.operatingSystemVersion
-        r.items.append(EnvItem(id: "macos", title: "macOS 26.6 or later", ok: (v.majorVersion, v.minorVersion) >= (26, 6), detail: "This Mac has \(v.majorVersion).\(v.minorVersion)."))
+        r.items.append(EnvItem(id: "macos", title: L("macOS 26.6 or later"), ok: (v.majorVersion, v.minorVersion) >= (26, 6), detail: L("This Mac has %@.", "\(v.majorVersion).\(v.minorVersion)")))
 
         // Xcode
-        let dev = Host.run("/usr/bin/xcode-select", ["-p"])?.out.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let build = Host.run("/usr/bin/xcodebuild", ["-version"])
+        let dev = Host.run(Host.tool("xcode-select"), ["-p"])?.out.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let build = Host.run(Host.tool("xcodebuild"), ["-version"])
         let xcodeOK = build?.code == 0 && !dev.contains("CommandLineTools")
-        var xcode = EnvItem(id: "xcode", title: "Xcode 27.2", ok: xcodeOK, detail: xcodeOK ? (build?.out.split(separator: "\n").first.map(String.init) ?? "") + " in \(dev)" : "")
+        var xcode = EnvItem(id: "xcode", title: L("Xcode 27.2"), ok: xcodeOK, detail: xcodeOK ? L("%@ in %@", build?.out.split(separator: "\n").first.map(String.init) ?? "", dev) : "")
         if !xcodeOK {
-            xcode.detail = "Not found in Applications, or it does not run. Download Xcode 27.2, move it to Applications, then check again."
+            xcode.detail = L("Xcode is Apple's free app for building apps, and it is large. Download Xcode 27.2, move it to Applications, then come back here.")
             xcode.link = xcodeURL
         }
         r.items.append(xcode)
         if xcodeOK {
-            let metal = Host.run("/usr/bin/xcrun", ["-sdk", "macosx", "metal", "--version"])
-            r.items.append(EnvItem(id: "metal", title: "Metal compiler", ok: metal?.code == 0, detail: metal?.code == 0 ? "" : "The Metal toolchain is a separate download.",
-                                   fix: metal?.code == 0 ? nil : "xcodebuild -downloadComponent MetalToolchain"))
-            if target == .ios {
-                let sdk = Host.run("/usr/bin/xcrun", ["--sdk", "iphoneos", "--show-sdk-path"])
-                r.items.append(EnvItem(id: "ios-sdk", title: "iOS platform", ok: sdk?.code == 0, detail: sdk?.code == 0 ? "" : "Install it in Xcode → Settings → Components."))
+            let metal = Host.run(Host.tool("xcrun"), ["-sdk", "macosx", "metal", "--version"])
+            r.items.append(EnvItem(id: "metal", title: L("Metal compiler"), ok: metal?.code == 0, detail: metal?.code == 0 ? "" : L("The Metal toolchain is a separate download."),
+                                   fix: metal?.code == 0 ? nil : "xcodebuild -downloadComponent MetalToolchain", helper: true))
+            if target != .macApp {
+                let sdk = Host.run(Host.tool("xcrun"), ["--sdk", "iphoneos", "--show-sdk-path"])
+                r.items.append(EnvItem(id: "ios-sdk", title: L("iOS platform"), ok: sdk?.code == 0, detail: sdk?.code == 0 ? "" : L("Install it in Xcode → Settings → Components.")))
             }
         }
 
         // Homebrew's tools
         let brew = Host.which("brew") != nil
+        if !brew {
+            r.items.append(EnvItem(id: "homebrew", title: L("Homebrew"), ok: false, detail: L("A free installer for developer tools. It opens in Terminal and asks for your Mac's password: type it there, the letters stay invisible. Then come back here."),
+                                   fix: #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#, link: brewURL, linkTitle: "brew.sh", terminal: true))
+        }
         func tool(_ id: String, _ exe: String, _ title: String, _ fix: String) {
             let ok = Host.which(exe) != nil
-            r.items.append(EnvItem(id: id, title: title, ok: ok, detail: ok ? "" : (brew ? "" : "Install Homebrew first."), fix: ok || !brew ? nil : fix, link: ok || brew ? nil : brewURL))
+            r.items.append(EnvItem(id: id, title: title, ok: ok, detail: ok || brew ? "" : L("Installed after Homebrew."), fix: ok || !brew ? nil : fix, helper: true))
         }
-        if target == .ios { tool("xcodegen", "xcodegen", "XcodeGen", "brew install xcodegen") }
+        if target != .macApp { tool("xcodegen", "xcodegen", "XcodeGen", "brew install xcodegen") }
         tool("zstd", "zstd", "zstd", "brew install zstd")
         tool("glslang", "glslangValidator", "glslang", "brew install glslang")
         let runtimes = Host.which("dotnet").flatMap { Host.run($0, ["--list-runtimes"]) }
         let dotnetOK = runtimes?.out.contains("Microsoft.NETCore.App 10.") == true
-        r.items.append(EnvItem(id: "dotnet", title: ".NET 10", ok: dotnetOK, detail: dotnetOK ? "" : (brew ? "It runs the shader translator." : "Install Homebrew first."),
-                               fix: !dotnetOK && brew ? "brew install dotnet" : nil, link: !dotnetOK && !brew ? brewURL : nil))   // the formula, as the cask's installer asks for a password
+        r.items.append(EnvItem(id: "dotnet", title: ".NET 10", ok: dotnetOK, detail: dotnetOK ? "" : (brew ? L("It runs the shader translator.") : L("Installed after Homebrew.")),
+                               fix: !dotnetOK && brew ? "brew install dotnet" : nil, helper: true))   // the formula, as the cask's installer asks for a password
 
         // Python: the first that has every module, else the first new enough to make an environment from
         let probes = pythonCandidates(preferred: preferredPython).compactMap { p in probePython(p).map { (p, $0) } }.filter { $0.1.usable }
@@ -174,16 +195,16 @@ enum EnvCheck {
             let shown = probe.version.prefix(2).map(String.init).joined(separator: ".")
             let venvPython = venv + "/bin/python"
             let install = "\(shellQuote(exe)) -m venv \(shellQuote(venv)) && \(shellQuote(venvPython)) -m pip install \(pipPackages)"
-            r.items.append(EnvItem(id: "python", title: "Python modules", ok: ok, detail: ok ? "Python \(shown): \(exe)" : "Missing from Python \(shown): \(probe.missing.joined(separator: ", ")).", fix: ok ? nil : install))
+            r.items.append(EnvItem(id: "python", title: L("Python modules"), ok: ok, detail: ok ? L("Python %@: %@", shown, exe) : L("Missing from Python %@: %@.", shown, probe.missing.joined(separator: ", ")), fix: ok ? nil : install, helper: true))
             if ok, !probe.optionalMissing.isEmpty {
                 let nsz = probe.optionalMissing.contains("nsz")
-                r.items.append(EnvItem(id: "python-optional", title: "Python modules for some games", ok: false,
-                                       detail: "Missing: \(probe.optionalMissing.joined(separator: ", ")). " + (nsz && needsNsz ? "This game's .nsz or .xcz files need nsz." : "Needed for .nsz / .xcz files and for games on newer system versions."),
-                                       fix: "\(shellQuote(exe)) -m pip install \(probe.optionalMissing.joined(separator: " "))", optional: !(nsz && needsNsz)))
+                r.items.append(EnvItem(id: "python-optional", title: L("Python modules for some games"), ok: false,
+                                       detail: L("Missing: %@.", probe.optionalMissing.joined(separator: ", ")) + " " + (nsz && needsNsz ? L("This game's .nsz or .xcz files need nsz.") : L("Needed for .nsz / .xcz files and for games on newer system versions.")),
+                                       fix: "\(shellQuote(exe)) -m pip install \(probe.optionalMissing.joined(separator: " "))", optional: !(nsz && needsNsz), helper: nsz && needsNsz))
             }
         } else {
-            r.items.append(EnvItem(id: "python", title: "Python 3.12 or newer", ok: false, detail: brew ? "No arm64 Python 3.12 or newer was found." : "Install Homebrew first.",
-                                   fix: brew ? "brew install python@3.14" : nil, link: brew ? nil : brewURL))
+            r.items.append(EnvItem(id: "python", title: L("Python 3.12 or newer"), ok: false, detail: brew ? L("No arm64 Python 3.12 or newer was found.") : L("Installed after Homebrew."),
+                                   fix: brew ? "brew install python@3.14" : nil, helper: true))
         }
 
         // The compiler the shaders were tested with; the script stops on another one unless told otherwise
@@ -191,9 +212,39 @@ enum EnvCheck {
             let c = Host.run(py, [repo.appendingPathComponent("dm/gfx/tools/own_compilers.py").path, "--check-metal"], cwd: repo, timeout: 60)
             if let c, c.code != 0 {
                 let why = (c.out + c.err).trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "[RED] ", with: "")
-                r.items.append(EnvItem(id: "metal-version", title: "The tested Metal compiler", ok: false, detail: why, link: xcodeURL))
+                r.items.append(EnvItem(id: "metal-version", title: L("The tested Metal compiler"), ok: false, detail: why, link: xcodeURL))
             }
         }
+        if target == .device, xcodeOK {
+            r.devices = DeviceList.current()
+            let account = AppleAccount.current()
+            r.teams = account.teams
+            r.items += deviceItems(devices: r.devices, hasAccount: account.hasAccount, teams: account.teams)
+        }
         return r
+    }
+
+    // What an install over a cable needs beyond a build. All of it is the player's to do, on the phone or in Xcode, where a password goes: no command here can do it.
+    static func deviceItems(devices: [ConnectedDevice], hasAccount: Bool, teams: [AppleTeam]) -> [EnvItem] {
+        var items = [EnvItem]()
+        let xcode = URL(fileURLWithPath: "/Applications/Xcode.app")
+        items.append(hasAccount
+            ? EnvItem(id: "apple-id", title: L("Apple ID in Xcode"), ok: true, detail: teams.first.map { $0.isFree ? L("Free team %@: apps last 7 days, 3 at a time.", $0.id) : L("Team %@.", $0.id) } ?? "")
+            : EnvItem(id: "apple-id", title: L("Apple ID in Xcode"), ok: false, detail: L("Add yours in Xcode → Settings → Apple Accounts. A free one is enough; your password stays in Xcode."), link: xcode, linkTitle: L("Open Xcode")))
+        if hasAccount, teams.isEmpty {
+            items.append(EnvItem(id: "apple-team", title: L("Signing certificate"), ok: false, detail: L("Your Apple ID is added; one step left. In Xcode → Settings → Apple Accounts, select your account, click Manage Certificates, then + → Apple Development. This app reads your team from that certificate. Or enter the team ID under Advanced."), link: xcode, linkTitle: L("Open Xcode"), optional: true))
+        }
+        guard let d = devices.first else {
+            items.append(EnvItem(id: "device", title: L("iPhone"), ok: false, detail: L("Connect it with a cable, unlock it, and tap Trust.")))
+            return items
+        }
+        items.append(EnvItem(id: "device", title: L("iPhone"), ok: true, detail: d.wired ? L("%@: %@, by cable", d.name, d.model) : L("%@: %@, over the network", d.name, d.model)))
+        if d.developerMode == false {
+            items.append(EnvItem(id: "developer-mode", title: L("Developer Mode"), ok: false, detail: L("On the iPhone: Settings → Privacy & Security → Developer Mode, turn it on, and let it restart.")))
+        }
+        if d.supported == false {
+            items.append(EnvItem(id: "device-model", title: L("iPhone model"), ok: false, detail: L("%@ cannot run these games: they need an iPhone 15 Pro or newer.", d.model)))
+        }
+        return items
     }
 }

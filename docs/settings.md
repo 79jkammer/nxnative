@@ -224,7 +224,14 @@ A line like `DM_PRESENT_SNAP=0` in `Documents/env.txt` (in the Files app, under 
 | Display mode (Mac) | `DM_FULLSCREEN` | `1` fullscreen, `0` a window |
 | Cloud saves folder (Mac) | `DM_SAVE_SYNC` | a folder; `icloud`: iCloud Drive › nxnative Saves; `0`: off |
 | Frame-rate counter | `DM_SHOW_FPS` | `1`, `0` |
+| Touch controls | `DM_TOUCH_CONTROLS` | `1`, `0` |
+| Touch control size | `DM_TOUCH_SCALE` | `0.7` to `1.3` |
+| Touch control opacity | `DM_TOUCH_OPACITY` | `0.2` to `1` |
 | Touch feedback | `DM_TOUCH_HAPTICS` | `1`, `0` |
+| Trackpad turns the camera (Mac) | `DM_TRACKPAD_CAMERA` | `1`, `0` |
+| Trackpad speed (Mac) | `DM_TRACKPAD_SPEED` | `0.2` to `3` |
+| Invert camera up and down | `DM_CAMERA_INVERT_Y` | `1`, `0` |
+| Swap A with B and X with Y | `DM_PAD_SWAP_AB` | `1`, `0` |
 | Game rumble | `DM_RUMBLE` | `1`, `0` |
 | Rumble strength | `DM_RUMBLE_GAIN` | `0` to `3` |
 | Rumble cutoff | `DM_RUMBLE_MIN` | `0` to `0.9` |

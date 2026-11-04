@@ -26,15 +26,19 @@ fi
 python3 -I "$(dirname "$0")/../dm/tools/romfs.py" "$img" "${DM_RESOURCE_MARKER:-}"
 echo "identity: $(python3 -I "$(dirname "$0")/../dm/tools/romfs_image.py" --identity "$img")"
 xcrun devicectl device copy to --device "$dev" --domain-type appDataContainer --domain-identifier "$id" --source "$img" --destination Documents/romfs.img -q
-# Add-on content (DLC): <index>.img files or legacy <index>/ trees. devicectl merges directories by default, retaining removed DLC that the host would still report owned.
-# resources.env describes the complete DLC set. An empty set replaces old content with an empty directory, which also takes precedence over bundled DLC at startup.
+# Add-on content (DLC): <index>.img files or legacy <index>/ trees, merged into Documents/aoc. Never with --remove-existing-content true: devicectl 651 (Xcode 27.2) then empties the app's Documents
+# and tmp, saves and the image just copied included, whatever the destination is (docs/reference/packing.md). It also cannot send an empty folder, so a build with no DLC sends none.
+# devicectl has no delete, so DLC this build no longer has stays on the phone, and the host would still report it as owned: say so.
 if [ "$sync_aoc" = 1 ]; then
     aoc=$DM_RESOURCE_AOC
-    if [ -z "$aoc" ]; then
-        aoc=$(mktemp -d "${TMPDIR:-/tmp}/nxnative-aoc.XXXXXX")
-        trap 'rmdir "$aoc"' EXIT
+    if [ -n "$aoc" ] && [ -n "$(ls -A "$aoc")" ]; then
+        xcrun devicectl device copy to --device "$dev" --domain-type appDataContainer --domain-identifier "$id" --source "$aoc" --destination Documents/aoc -q
+        echo "DLC on the phone: $id"
     fi
-    xcrun devicectl device copy to --device "$dev" --domain-type appDataContainer --domain-identifier "$id" --source "$aoc" --destination Documents/aoc --remove-existing-content true -q
-    echo "DLC on the phone: $id"
+    stale=
+    for entry in $(xcrun devicectl device info files --device "$dev" --domain-type appDataContainer --domain-identifier "$id" --subdirectory Documents 2> /dev/null | awk '{print $1}' | sed -n 's#^aoc/\([1-9][0-9]*\(\.img\)\{0,1\}\)$#\1#p'); do
+        [ -n "$aoc" ] && [ -e "$aoc/$entry" ] || stale="$stale $entry"
+    done
+    [ -z "$stale" ] || echo "[RED] Documents/aoc on the phone also holds DLC this build does not have:$stale. The game still sees it; only deleting the app removes it, which deletes its saves too."
 fi
 echo "game files on the phone: $id"

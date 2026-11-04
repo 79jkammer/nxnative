@@ -172,15 +172,21 @@ class DlcTransfers(unittest.TestCase):
 import os, shutil, sys
 from pathlib import Path
 args = sys.argv[1:]
+device = Path(os.environ['DLC_PUSH_DEVICE'])
+if args[:4] == ['devicectl', 'device', 'info', 'files']:   # a recursive listing: name, then its details
+    root = device / args[args.index('--subdirectory') + 1]
+    for p in sorted(root.rglob('*')) if root.is_dir() else []: print(p.relative_to(root), 'Writable,', 'Readable')
+    sys.exit(0)
 assert args[:4] == ['devicectl', 'device', 'copy', 'to']
 src = Path(args[args.index('--source') + 1])
-dst = Path(os.environ['DLC_PUSH_DEVICE']) / args[args.index('--destination') + 1]
+dst = device / args[args.index('--destination') + 1]
+# What devicectl 651 does, measured on a phone: this flag empties the app's Documents and tmp whatever the destination, and an empty folder does not transfer.
+if '--remove-existing-content' in args and args[args.index('--remove-existing-content') + 1] == 'true':
+    shutil.rmtree(device); device.mkdir()
+if src.is_dir() and not any(src.iterdir()): sys.exit(1)
 if dst.name == 'aoc' and os.environ.get('DLC_PUSH_FAIL'): sys.exit(int(os.environ['DLC_PUSH_FAIL']))
 dst.parent.mkdir(parents=True, exist_ok=True)
-if src.is_dir():
-    # devicectl defaults to merging; only an explicit true removes old content.
-    if '--remove-existing-content' in args and args[args.index('--remove-existing-content') + 1] == 'true' and dst.exists(): shutil.rmtree(dst)
-    shutil.copytree(src, dst, dirs_exist_ok=True)
+if src.is_dir(): shutil.copytree(src, dst, dirs_exist_ok=True)
 else: shutil.copyfile(src, dst)
 ''')
         xcrun.chmod(0o755)
@@ -194,26 +200,41 @@ else: shutil.copyfile(src, dst)
         return subprocess.run(['bash', str(REPO / 'scripts/push_romfs.sh'), 'fixture-device', 'fixture.bundle',
                                str(self.img if image_only else resources)], env=self.env, capture_output=True, text=True)
 
-    def test_smaller_dlc_set_replaces_images_and_legacy_folders(self):
+    def test_dlc_push_keeps_saves_and_the_image(self):
+        save = self.device / 'Documents/save'; save.mkdir(parents=True); (save / 'slot').write_text('progress')
+        (self.aoc / '1.img').write_text('dlc')
+        result = self.push(self.aoc); self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((save / 'slot').read_text(), 'progress')
+        self.assertEqual((self.device / 'Documents/aoc/1.img').read_text(), 'dlc')
+        self.assertEqual((self.device / 'Documents/romfs.img').read_bytes(), self.img.read_bytes())
+
+    def test_smaller_dlc_set_updates_and_reports_what_stays(self):
         (self.aoc / '1.img').write_text('old')
         (self.aoc / '2').mkdir(); (self.aoc / '2/marker').write_text('legacy DLC')
         result = self.push(self.aoc); self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('[RED]', result.stdout)
         remote = self.device / 'Documents/aoc'
         self.assertEqual({p.name for p in remote.iterdir()}, {'1.img', '2'})
         (self.aoc / '1.img').write_text('updated'); shutil.rmtree(self.aoc / '2')
         result = self.push(self.aoc); self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual({p.name for p in remote.iterdir()}, {'1.img'})
         self.assertEqual((remote / '1.img').read_text(), 'updated')
+        self.assertIn('[RED] Documents/aoc on the phone also holds DLC this build does not have: 2.', result.stdout)
+        self.assertIn('game files on the phone', result.stdout)
 
-    def test_empty_dlc_set_clears_previous_content(self):
+    def test_no_dlc_sends_no_folder(self):   # the error this began with: Failed to retrieve the file node for Documents/aoc
         for aoc in ('', None, self.aoc):
             with self.subTest(aoc=aoc):
-                remote = self.device / 'Documents/aoc'; remote.mkdir(parents=True, exist_ok=True)
-                (remote / '1.img').write_text('stale')
                 self.env['DM_RESOURCE_AOC'] = str(self.root / 'inherited-stale-path')
                 result = self.push(aoc); self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue(remote.is_dir()); self.assertEqual(list(remote.iterdir()), [])
+                self.assertFalse((self.device / 'Documents/aoc').exists())
+                self.assertIn('game files on the phone', result.stdout)
                 self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_no_dlc_reports_what_stays(self):
+        remote = self.device / 'Documents/aoc'; remote.mkdir(parents=True); (remote / '1.img').write_text('stale')
+        result = self.push(''); self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((remote / '1.img').read_text(), 'stale')
+        self.assertIn('[RED] Documents/aoc on the phone also holds DLC this build does not have: 1.img.', result.stdout)
 
     def test_image_only_push_preserves_dlc(self):
         remote = self.device / 'Documents/aoc'; remote.mkdir(parents=True)
@@ -231,6 +252,7 @@ else: shutil.copyfile(src, dst)
 
     def test_dlc_transfer_failure_is_reported(self):
         self.env['DLC_PUSH_FAIL'] = '7'
+        (self.aoc / '1.img').write_text('dlc')
         result = self.push(self.aoc)
         self.assertEqual(result.returncode, 7)
         self.assertNotIn('DLC on the phone', result.stdout)

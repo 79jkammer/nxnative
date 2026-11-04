@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Stands in for scripts/build_ipa_from_nsp.py in NXNative Builder's checks: it writes the JSON events of docs/frontends.md and exits as the script does. --app-name picks what it does, so the app
+# Stands in for scripts/build_ipa_from_nsp.py in Slotless's checks: it writes the JSON events of docs/frontends.md and exits as the script does. --app-name picks what it does, so the app
 # needs no test mode: finish (the default), fail, or hang (runs a child and waits to be interrupted, FAKE_CHILD_PID naming a file for its pid). FAKE_DELAY: seconds per progress step.
 import json, os, signal, subprocess, sys, time
 
@@ -32,6 +32,16 @@ def main():
             child.wait()
             return 130 if child.returncode == -signal.SIGINT else 3
         ev('stage_end', k=k, name=name, ok=True, summary=f'{name} summary', elapsed=10 * delay)
+    if '--prepare-xcode' in argv:   # the messages an install goes on from, and the project's resource list
+        project = os.path.join(argv[0], 'build/xcode/DmIOS.xcodeproj')
+        os.makedirs(project, exist_ok=True); os.makedirs(os.path.join(os.path.dirname(project), 'Gen'), exist_ok=True)
+        image = os.path.join(argv[0], 'build/RomFS.img')
+        with open(image, 'w') as f: f.write('image')
+        with open(os.path.join(os.path.dirname(project), 'Gen/resources.env'), 'w') as f: f.write(f"DM_RESOURCE_ROMFS='{image}'\n")
+        bundle = argv[argv.index('--bundle-id') + 1] if '--bundle-id' in argv else 'org.nxnative.fake'
+        ev('say', msg=f'[12:00:10] app name: Game; version: 1.0; bundle ID: {bundle}')
+        ev('say', msg=f'[12:00:30] game project: {project}')
+        return 0
     ev('say', msg=f'[12:00:30] done: {out} (4.2 GB)')
     return 0
 
