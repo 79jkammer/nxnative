@@ -1,4 +1,4 @@
-"""Compile NXNative Builder's logic and run dm/builder/tests/builder_check.swift; no window or game needed."""
+"""Compile Slotless's logic and run dm/builder/tests/builder_check.swift; no window or game needed."""
 from pathlib import Path
 import re
 import shutil

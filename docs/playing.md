@@ -18,7 +18,7 @@ A connected game controller hides the touch controls and keeps every button.
 
 ## Other controls
 
-The settings screen has **Invert camera up and down** and **Swap A with B and X with Y**. On the Mac it also has **Trackpad turns the camera**: a two-finger swipe over the game is the right stick. [NXNative Builder](development.md#nxnative-builder) moves each key and each controller button: `DM_KEYMAP` and `DM_PAD_MAP` in `env.txt` ([the list](env_switches.tsv)).
+The settings screen has **Invert camera up and down** and **Swap A with B and X with Y**. On the Mac it also has **Trackpad turns the camera**: a two-finger swipe over the game is the right stick. [Slotless](development.md#slotless) moves each key and each controller button: `DM_KEYMAP` and `DM_PAD_MAP` in `env.txt` ([the list](env_switches.tsv)).
 
 ## Rumble
 

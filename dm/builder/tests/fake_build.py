@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Stands in for scripts/build_ipa_from_nsp.py in NXNative Builder's checks: it writes the JSON events of docs/frontends.md and exits as the script does. --app-name picks what it does, so the app
+# Stands in for scripts/build_ipa_from_nsp.py in Slotless's checks: it writes the JSON events of docs/frontends.md and exits as the script does. --app-name picks what it does, so the app
 # needs no test mode: finish (the default), fail, or hang (runs a child and waits to be interrupted, FAKE_CHILD_PID naming a file for its pid). FAKE_DELAY: seconds per progress step.
 import json, os, signal, subprocess, sys, time
 

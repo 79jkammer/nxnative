@@ -1,4 +1,4 @@
-// NXNative Builder's state and the run of the NSP script: one build at a time, its events applied to a BuildTranscript on the main thread. The script is started the way docs/frontends.md describes:
+// Slotless's state and the run of the NSP script: one build at a time, its events applied to a BuildTranscript on the main thread. The script is started the way docs/frontends.md describes:
 // --progress json, the exit status (0 done, 1 stopped on an error, 2 invalid arguments, 130 interrupted) and stderr read as well as the events.
 import AppKit
 import Foundation
@@ -613,7 +613,7 @@ final class BuilderModel: ObservableObject {
     private var venvPath: String {
         if let v = defaults.string(forKey: Key.venv), !v.isEmpty { return v }
         if let g = game?.url { return g.deletingLastPathComponent().appendingPathComponent(".nxnative-venv").path }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/NXNative Builder/venv").path
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Slotless/venv").path
     }
 
     func checkEnvironment(force: Bool = false) {
@@ -643,7 +643,7 @@ final class BuilderModel: ObservableObject {
         let steps = env.fixSteps
         guard !steps.isEmpty, let repo else { return }
         defaults.set(venvPath, forKey: Key.venv)
-        let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/NXNative Builder/setup.log")
+        let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Slotless/setup.log")
         Task {
             for (i, step) in steps.enumerated() {
                 installingStep = L("Installing %@ (%@ of %@)…", step.title, "\(i + 1)", "\(steps.count)")
@@ -670,9 +670,9 @@ final class BuilderModel: ObservableObject {
         defaults.set(venvPath, forKey: Key.venv)
         let xcode = Host.xcodeOverride.map { "export DEVELOPER_DIR=\(shellQuote($0))\n" } ?? ""
         let fixes = env.needsTerminal ? env.items.filter { !$0.ok && $0.terminal }.compactMap(\.fix) : env.fixes
-        var s = "#!/bin/zsh\nexport PATH=\(Host.toolPaths.map(shellQuote).joined(separator: ":")):$PATH\nexport HOMEBREW_NO_INSTALL_CLEANUP=1\n\(xcode)set -e\nclear\necho 'NXNative Builder'\necho\n"
+        var s = "#!/bin/zsh\nexport PATH=\(Host.toolPaths.map(shellQuote).joined(separator: ":")):$PATH\nexport HOMEBREW_NO_INSTALL_CLEANUP=1\n\(xcode)set -e\nclear\necho 'Slotless'\necho\n"
         for fix in fixes { s += "echo \(shellQuote("$ " + fix))\n\(fix)\necho\n" }
-        s += "echo 'Done. Return to NXNative Builder: it checks again by itself.'\n"
+        s += "echo 'Done. Return to Slotless: it checks again by itself.'\n"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("nxnative-setup-\(UUID().uuidString).command")
         do {
             try s.write(to: url, atomically: true, encoding: .utf8)

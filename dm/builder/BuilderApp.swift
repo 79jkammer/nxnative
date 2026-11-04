@@ -1,16 +1,28 @@
-// NXNative Builder: a Mac app that turns a game the player owns into an app for their iPhone or Mac with the NSP script, without a terminal. The left side sets up the build, the right side shows what
+// Slotless: a Mac app that turns a game the player owns into an app for their iPhone or Mac with the NSP script, without a terminal. The left side sets up the build, the right side shows what
 // stands in its way, then its progress and result. By default it asks only for what anyone can answer; Settings has the language and turns on the advanced options, commands and messages.
-// Every text goes through L (Strings.swift). Built by scripts/build_builder_app.py; docs/development.md, NXNative Builder.
+// Every text goes through L (Strings.swift). Built by scripts/build_builder_app.py; docs/development.md, Slotless.
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-let appName = "NXNative Builder"
+let appName = "Slotless"
 
 @main
 struct BuilderApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = BuilderModel()
+
+    init() { Self.moveFormerFolder() }
+
+    // The app was called NXNative Builder before its first release: what it kept under that name moves here once. The bundle identifier stays, so its settings need no move, only the path of its Python environment.
+    private static func moveFormerFolder() {
+        let fm = FileManager.default, support = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        let old = support.appendingPathComponent("NXNative Builder"), new = Engine.folder
+        guard fm.fileExists(atPath: old.path), !fm.fileExists(atPath: new.path), (try? fm.moveItem(at: old, to: new)) != nil else { return }
+        if let venv = UserDefaults.standard.string(forKey: "venvPath"), venv.hasPrefix(old.path + "/") {
+            UserDefaults.standard.set(new.path + venv.dropFirst(old.path.count), forKey: "venvPath")
+        }
+    }
 
     var body: some Scene {
         Window(appName, id: "main") {

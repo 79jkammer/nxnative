@@ -1,4 +1,4 @@
-// NXNative Builder's interface language. English is the key and the base: L looks the text up in the table of the chosen language, and a text with no entry stays English. This table is the
+// Slotless's interface language. English is the key and the base: L looks the text up in the table of the chosen language, and a text with no entry stays English. This table is the
 // one place in this repository with text in another language, at the player's request: code, comments, logs and the script's own messages stay in English. dm/tools/tests/test_builder_app.py fails when
 // a text passed to L has no translation here, or a window's text does not go through L.
 import Foundation

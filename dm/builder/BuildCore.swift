@@ -1,4 +1,4 @@
-// NXNative Builder's logic, without any UI: the NSP script's arguments and its JSON events (docs/frontends.md, Building: the NSP script), what a game folder holds, the check of a keys file.
+// Slotless's logic, without any UI: the NSP script's arguments and its JSON events (docs/frontends.md, Building: the NSP script), what a game folder holds, the check of a keys file.
 // dm/builder/tests/builder_check.swift compiles this file alone and checks it. Game files and keys stay where the player keeps them: the app passes their paths to the script, copies nothing,
 // and of a keys file reads only the key names, never showing a value.
 import Foundation

@@ -1,4 +1,4 @@
-// NXNative Builder's logic and its run of a script, without its window: dm/tools/tests/test_builder_app.py compiles this with Strings.swift, BuildCore.swift, Controls.swift, Device.swift, Environment.swift and BuilderModel.swift, and runs it
+// Slotless's logic and its run of a script, without its window: dm/tools/tests/test_builder_app.py compiles this with Strings.swift, BuildCore.swift, Controls.swift, Device.swift, Environment.swift and BuilderModel.swift, and runs it
 // with the fake script (tests/fake_build.py) and a temporary folder. Exit 0 when every check holds.
 import Foundation
 

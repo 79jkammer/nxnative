@@ -1,4 +1,4 @@
-// NXNative Builder's control maps, without any UI: the player's keys and controller buttons as DM_KEYMAP and DM_PAD_MAP (dm/host/input_map.h has their format and the keys' defaults), and what can be
+// Slotless's control maps, without any UI: the player's keys and controller buttons as DM_KEYMAP and DM_PAD_MAP (dm/host/input_map.h has their format and the keys' defaults), and what can be
 // moved to the Trash when a build is done.
 import Foundation
 
@@ -122,7 +122,7 @@ enum Cleanup {
 
 // The app's own copy of the project, for an app that was not built from a checkout: the build script names the exact commit it was made from.
 enum Engine {
-    static var folder: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/NXNative Builder") }
+    static var folder: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Slotless") }
     static func dir(commit: String) -> URL { folder.appendingPathComponent("engine-\(commit)") }
     static func isComplete(_ dir: URL) -> Bool { FileManager.default.fileExists(atPath: dir.appendingPathComponent("scripts/build_ipa_from_nsp.py").path) }
 

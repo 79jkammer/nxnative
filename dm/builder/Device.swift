@@ -1,5 +1,5 @@
-// NXNative Builder's install over a cable, without any UI: what devicectl says about a connected iPhone, the Apple team Xcode knows, the arguments of xcodebuild, and what its failures mean.
-// A free Apple ID is enough for this: Xcode signs the app for this one device, for 7 days. The player starts every install from the window (BuilderModel.installOnDevice); docs/development.md, NXNative Builder.
+// Slotless's install over a cable, without any UI: what devicectl says about a connected iPhone, the Apple team Xcode knows, the arguments of xcodebuild, and what its failures mean.
+// A free Apple ID is enough for this: Xcode signs the app for this one device, for 7 days. The player starts every install from the window (BuilderModel.installOnDevice); docs/development.md, Slotless.
 import Foundation
 
 struct ConnectedDevice: Identifiable, Equatable {

@@ -83,7 +83,7 @@
 - **Symptom:** `scripts/push_romfs.sh` ends with `ERROR: Failed to retrieve the file node for Documents/aoc (com.apple.dt.CoreDeviceError error 7000 (0x1B58))` after copying the image for minutes, and the app then logs `[RED] boot: There is no game file image on this device`. With DLC to send there is no error, and the saves are gone all the same.
 - **Cause:** two behaviours of `devicectl device copy to` in devicectl 651 (Xcode 27.2), measured on an iPhone with iOS 27 in an app's `tmp`. `--remove-existing-content true` removes more than the destination folder its help describes: a copy to `tmp/x/aoc` removed the other folders in `tmp` and everything in `Documents`. And an empty source folder does not transfer, with or without the flag. The script sent an empty folder with the flag for a build with no DLC.
 - **Fix:** `push_romfs.sh` never passes the flag and sends no empty folder: it merges a non-empty DLC set into `Documents/aoc`. devicectl has no delete, so DLC the build no longer has stays on the phone, and the script says so in a `[RED]` line, as the host still reports it as owned; only deleting the app removes it. `test_romfs_image.py` models both behaviours.
-- **Found on:** [Need for Speed: Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md), a game with no DLC, installed from NXNative Builder. It applies to every game. An older devicectl may behave as its help says; the script no longer depends on it.
+- **Found on:** [Need for Speed: Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md), a game with no DLC, installed from Slotless. It applies to every game. An older devicectl may behave as its help says; the script no longer depends on it.
 
 ## Launcher metadata
 
