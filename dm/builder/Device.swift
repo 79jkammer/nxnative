@@ -110,7 +110,8 @@ struct DeviceInstallRecord: Codable, Equatable {
 
 enum XcodeInstall {
     // A free team's App IDs are unique across all of Apple: org.nxnative.<title ID> can be someone else's, and this one is the player's own. It stays the same, so a reinstall keeps the app and its saves.
-    static func bundleID(team: String, title: UInt64) -> String { "org.nxnative.u\(team.lowercased()).\(GameScan.hex(title).lowercased())" }
+    // Without a title, {title} is left for the script, which knows the game once it has read the package
+    static func bundleID(team: String, title: UInt64?) -> String { "org.nxnative.u\(team.lowercased()).\(title.map { GameScan.hex($0).lowercased() } ?? "{title}")" }
 
     // CODE_SIGN_ENTITLEMENTS= overrides the project's Gen/dm.xcconfig, which asks for Increased Memory Limit: for an account that cannot get it, with no need to prepare the project again.
     static func arguments(project: String, scheme: String, device: String, team: String, derivedData: String, limitedMemory: Bool) -> [String] {

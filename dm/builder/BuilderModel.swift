@@ -113,7 +113,7 @@ final class BuilderModel: ObservableObject {
     private var exitWaiters: [() -> Void] = []
     private let defaults = UserDefaults.standard
 
-    private enum Key { static let repo = "repoRoot", game = "gameFolder", keys = "keysFile", target = "target", python = "pythonPath", venv = "venvPath", installs = "deviceInstalls", title = "titleID", language = "language", advanced = "advancedMode", controls = "controls" }
+    private enum Key { static let repo = "repoRoot", game = "gameFolder", keys = "keysFile", target = "target", python = "pythonPath", venv = "venvPath", installs = "deviceInstalls", title = "titleID", file = "gameFile", language = "language", advanced = "advancedMode", controls = "controls" }
 
     init() {
         language = defaults.string(forKey: Key.language).flatMap(AppLanguage.init(rawValue:)) ?? .system
@@ -124,7 +124,10 @@ final class BuilderModel: ObservableObject {
         options.target = defaults.string(forKey: Key.target).flatMap(BuildTarget.init(rawValue:)) ?? .device
         if !advancedMode, options.target == .ios { options.target = .device }
         if let k = defaults.string(forKey: Key.keys), FileManager.default.fileExists(atPath: k) { setKeys(URL(fileURLWithPath: k)) }
-        if let g = defaults.string(forKey: Key.game), FileManager.default.fileExists(atPath: g) { setGame(URL(fileURLWithPath: g), title: defaults.string(forKey: Key.title)) }
+        if let g = defaults.string(forKey: Key.game), FileManager.default.fileExists(atPath: g) {
+            let folder = URL(fileURLWithPath: g)
+            setGame(folder, file: defaults.string(forKey: Key.file).map { folder.appendingPathComponent($0) }, title: defaults.string(forKey: Key.title))
+        }
         checkEnvironment(force: true)
         if repo == nil, engineSource != nil { downloadEngine() }
     }
@@ -205,12 +208,15 @@ final class BuilderModel: ObservableObject {
     }
     var selectedTitle: UInt64? {
         if let v = UInt64(options.titleID, radix: 16) { return v }
-        return game?.titles.count == 1 ? game?.titles.first : nil
+        return !gameIsFile && gameChoices == 1 ? game?.titles.first : nil
     }
-    var needsGameChoice: Bool { (game?.titles.count ?? 0) > 1 && options.titleID.isEmpty }
+    var gameIsFile: Bool { !options.gameFile.isEmpty }   // the player chose one file: that is the game, whatever else its folder holds
+    var gameChoices: Int { (game?.titles.count ?? 0) + (game?.unidentified.count ?? 0) }
+    var needsGameChoice: Bool { !gameIsFile && gameChoices > 1 && options.titleID.isEmpty }
     var gameName: String {
         if let n = profile?.name, !n.isEmpty { return n }
         if needsGameChoice { return L("Which game?") }
+        if gameIsFile, selectedTitle == nil { return GameFolder.displayName(options.gameFile) }
         return game?.fileName(of: selectedTitle) ?? game?.url.lastPathComponent ?? ""
     }
     func name(of title: UInt64) -> String {
@@ -219,8 +225,10 @@ final class BuilderModel: ObservableObject {
     }
     func chooseTitle(_ hex: String) {
         options.titleID = hex
+        options.gameFile = ""
         options.package = ""
         defaults.set(hex, forKey: Key.title)
+        defaults.removeObject(forKey: Key.file)
         checkEnvironment()
     }
     var freeBytes: Int64? {
@@ -229,7 +237,7 @@ final class BuilderModel: ObservableObject {
     }
     var spaceProblem: String? {
         guard let game, let free = freeBytes else { return nil }
-        let need = GameScan.spaceNeeded(game, title: selectedTitle)
+        let need = GameScan.spaceNeeded(game, title: selectedTitle, file: options.gameFile)
         return need > free ? L("The first build needs about %@ free on this disk; it has %@.", formatBytes(Double(need)), formatBytes(Double(free))) : nil
     }
     // What stops Build, in the order the player would fix it; the environment's own problems are shown with their fixes
@@ -297,7 +305,7 @@ final class BuilderModel: ObservableObject {
         o.teamID = team ?? ""
         if o.bundleID.isEmpty {
             if let saved = installRecord?.bundleID { o.bundleID = saved }
-            else if let t = team, let title = selectedTitle { o.bundleID = XcodeInstall.bundleID(team: t, title: title) }
+            else if let t = team { o.bundleID = XcodeInstall.bundleID(team: t, title: selectedTitle) }
         }
         if let g = game?.url { o.xcodeWorkspace = g.appendingPathComponent("NxNative.xcworkspace").path }
         return o
@@ -492,7 +500,7 @@ final class BuilderModel: ObservableObject {
     private func findCleanup() {
         cleanupDone = false
         let target = options.target, folder = buildsFolder, output = outputURL
-        var gameFiles = game.map { g in g.isDump ? [URL]() : g.packages(of: selectedTitle).map { g.url.appendingPathComponent($0.name) } } ?? []
+        var gameFiles = game.map { g in g.isDump ? [URL]() : g.files(title: selectedTitle, file: options.gameFile).map { g.url.appendingPathComponent($0.name) } } ?? []
         gameFiles = gameFiles.filter { FileManager.default.fileExists(atPath: $0.path) }
         Task.detached(priority: .utility) {
             let items = Cleanup.items(target: target, buildFolder: folder, gameFiles: gameFiles, output: output)
@@ -511,7 +519,7 @@ final class BuilderModel: ObservableObject {
         if let failed { notice = L("Some files could not be moved to the Trash: %@", failed) }
         cleanupDone = cleanup.contains { $0.selected }
         cleanup = cleanup.filter { !$0.selected }
-        if let g = game?.url, cleanupDone { setGame(g, title: options.titleID) }
+        if let g = game?.url, cleanupDone { setGame(g, file: options.gameFile.isEmpty ? nil : g.appendingPathComponent(options.gameFile), title: options.titleID) }
     }
 
     // MARK: Files
@@ -549,9 +557,13 @@ final class BuilderModel: ObservableObject {
                     self.game = g
                     self.options.gameFolder = folder
                     self.options.needsKeys = !g.isDump
-                    let chosen = g.packages.first { $0.name == file?.lastPathComponent }?.baseTitle.map(GameScan.hex) ?? title ?? ""
-                    self.options.titleID = g.titles.count > 1 && g.titles.contains(where: { GameScan.hex($0) == chosen }) ? chosen : ""
+                    let package = g.packages.first { $0.name == file?.lastPathComponent }
+                    let chosen = package?.baseTitle.map(GameScan.hex) ?? title ?? ""
+                    self.options.gameFile = package?.name ?? ""
+                    // A title the folder's names do not show is still right for the file it was read from (the script's game event)
+                    self.options.titleID = package != nil || (g.titles.count > 1 && g.titles.contains { GameScan.hex($0) == chosen }) ? chosen : ""
                     self.defaults.set(self.options.titleID, forKey: Key.title)
+                    if let name = package?.name { self.defaults.set(name, forKey: Key.file) } else { self.defaults.removeObject(forKey: Key.file) }
                     self.options.package = ""
                     self.defaults.set(folder.path, forKey: Key.game)
                     self.findKeysBeside(folder)
@@ -563,11 +575,23 @@ final class BuilderModel: ObservableObject {
         }
     }
 
+    // A package of a folder with several games that the app cannot identify, chosen in the list: from here on it is as if the player had chosen that file
+    func chooseFile(_ name: String) {
+        options.gameFile = name
+        options.titleID = ""
+        options.package = ""
+        defaults.set(name, forKey: Key.file)
+        defaults.set("", forKey: Key.title)
+        checkEnvironment()
+    }
+
     func clearGame() {
         game = nil
         gameError = nil
         options.gameFolder = nil
+        options.gameFile = ""
         defaults.removeObject(forKey: Key.game)
+        defaults.removeObject(forKey: Key.file)
     }
 
     func setKeys(_ url: URL) {
@@ -696,6 +720,10 @@ final class BuilderModel: ObservableObject {
                 onLine: { [weak self] line in
                     guard let self, let e = BuildEvent.parse(line) else { return }
                     self.transcript.apply(e)
+                    if case let .game(title) = e, self.options.titleID.isEmpty, !title.isEmpty {   // now the install, its record and what cleaning up offers know the game
+                        self.options.titleID = title
+                        self.defaults.set(title, forKey: Key.title)
+                    }
                 },
                 onExit: { [weak self] code, stderr in
                     guard let self else { return }

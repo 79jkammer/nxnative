@@ -29,6 +29,7 @@ struct BuildOptions {
     var needsKeys = true   // false for a dump folder
     var target = BuildTarget.ios
     var titleID = ""       // only when the folder holds several games
+    var gameFile = ""      // the package the player chose, which names the game while its title ID is not known
     var package = ""       // v<N>; empty = the newest
     var language = ""
     var appName = ""
@@ -60,6 +61,7 @@ struct BuildOptions {
             if !v.isEmpty { a += [flag, v] }
         }
         text("--title-id", titleID)
+        if titleID.isEmpty { text("--game-file", gameFile) }
         text("-p", package)
         text("-l", language)
         text("--app-name", appName)
@@ -102,6 +104,7 @@ struct LiveProgress: Equatable {
 }
 
 enum BuildEvent: Equatable {
+    case game(String)   // the title ID of the game being built
     case stage(k: Int, n: Int, name: String, step: String)
     case step(k: Int, name: String, step: String)
     case progress(k: Int, name: String, step: String, LiveProgress)
@@ -126,6 +129,7 @@ enum BuildEvent: Equatable {
                 fraction: num("frac"), eta: num("eta"), elapsed: num("elapsed") ?? 0))
         case "stage_end": return .stageEnd(k: int("k"), name: str("name"), ok: (o["ok"] as? Bool) ?? false, summary: str("summary"), elapsed: num("elapsed") ?? 0)
         case "shaders_stale": return .shadersStale(reason: str("reason"), count: int("count"))
+        case "game": return .game(str("title_id"))
         case "say": return .say(str("msg"))
         default: return nil
         }
@@ -187,6 +191,7 @@ struct BuildTranscript {
             live = nil
         case let .shadersStale(reason, count):
             add(reason == "chain" ? L("Shaders must be rebuilt (the translation chain changed): %@ libraries", "\(count)") : L("Shaders must be rebuilt (the game profile's shader inputs changed): %@ libraries", "\(count)"), false)
+        case .game: break   // for the model, which then knows the game
         case let .say(msg):
             if msg.hasPrefix("[RED] ") {
                 let text = String(msg.dropFirst(6))
@@ -283,11 +288,23 @@ struct GameFolder: Equatable {
         return packages(of: title).reduce(0) { $0 + $1.size }
     }
 
+    // The files that are surely this game's, for what acts on them: its size, and what cleaning up offers. A package the app cannot identify counts only when it is the one the player chose:
+    // it may be another game, and the folder may be Downloads.
+    func files(title: UInt64?, file: String) -> [GamePackage] {
+        if title == nil, file.isEmpty { return packages }
+        return packages.filter { $0.name == file || (title != nil && $0.baseTitle == title) }
+    }
+
+    var unidentified: [GamePackage] { packages.filter { $0.titleID == nil } }
+
     // The game's name as its files give it: "Game [0100…][v0].nsp" → "Game"
     func fileName(of title: UInt64?) -> String? {
         let own = packages(of: title)
-        guard let p = own.first(where: { $0.kind == .base }) ?? own.first else { return nil }
-        let name = (p.name as NSString).deletingPathExtension
+        return (own.first(where: { $0.kind == .base }) ?? own.first).map { Self.displayName($0.name) }
+    }
+
+    static func displayName(_ file: String) -> String {
+        let name = (file as NSString).deletingPathExtension
         let cut = name.prefix { $0 != "[" }.trimmingCharacters(in: .whitespaces)
         return cut.isEmpty ? name : cut
     }
@@ -395,9 +412,9 @@ enum GameScan {
     }
 
     // The first build needs about twice the game's size plus 10 GB (README.md). An existing build folder already holds most of it.
-    static func spaceNeeded(_ game: GameFolder, title: UInt64? = nil) -> Int64 {
-        let built = title.map { FileManager.default.fileExists(atPath: game.url.appendingPathComponent(hex($0) + "_build").path) } ?? game.hasBuildFolder
-        return built ? 0 : game.bytes(of: title) * 2 + 10 << 30
+    static func spaceNeeded(_ game: GameFolder, title: UInt64? = nil, file: String = "") -> Int64 {
+        let built = title.map { FileManager.default.fileExists(atPath: game.url.appendingPathComponent(hex($0) + "_build").path) } ?? (file.isEmpty && game.hasBuildFolder)
+        return built ? 0 : game.files(title: title, file: file).reduce(0) { $0 + $1.size } * 2 + 10 << 30
     }
 }
 
