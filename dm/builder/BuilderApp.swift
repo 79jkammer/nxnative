@@ -31,7 +31,6 @@ struct BuilderApp: App {
                 .frame(minWidth: 920, minHeight: 620)
                 .onAppear {
                     delegate.model = model
-                    NSApp.applicationIconImage = AppIcon.make()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     if model.phase == .setup { model.checkEnvironment() }
@@ -70,20 +69,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
             model.cancelBuild { NSApp.reply(toApplicationShouldTerminate: true) }
             return .terminateLater
-        }
-    }
-}
-
-enum AppIcon {
-    static func make() -> NSImage {
-        NSImage(size: NSSize(width: 512, height: 512), flipped: false) { r in
-            let shape = NSBezierPath(roundedRect: r.insetBy(dx: 40, dy: 40), xRadius: 96, yRadius: 96)
-            NSGradient(starting: NSColor(red: 0.93, green: 0.20, blue: 0.24, alpha: 1), ending: NSColor(red: 0.66, green: 0.07, blue: 0.20, alpha: 1))?.draw(in: shape, angle: -90)
-            let config = NSImage.SymbolConfiguration(pointSize: 230, weight: .medium).applying(.init(paletteColors: [.white]))
-            if let s = NSImage(systemSymbolName: "gamecontroller.fill", accessibilityDescription: nil)?.withSymbolConfiguration(config) {
-                s.draw(in: NSRect(x: (r.width - s.size.width) / 2, y: (r.height - s.size.height) / 2, width: s.size.width, height: s.size.height))
-            }
-            return true
         }
     }
 }
