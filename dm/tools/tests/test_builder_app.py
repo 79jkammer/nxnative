@@ -26,6 +26,18 @@ class BuilderAppTests(unittest.TestCase):
             r = subprocess.run([exe, BUILDER / 'tests/fake_build.py', sys.executable, work], capture_output=True, text=True, timeout=180)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_the_icon_is_a_png_of_the_size_asked(self):   # its corners clear, its middle solid: iconutil rejects anything else, and Finder would show a blank app
+        import importlib.util, struct, zlib
+        spec = importlib.util.spec_from_file_location('build_builder_app', Path(__file__).resolve().parents[3] / 'scripts/build_builder_app.py')
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        png = script.icon_png(32)
+        self.assertEqual(struct.unpack('>II', png[16:24]), (32, 32))
+        pixels = zlib.decompress(png[png.index(b'IDAT') + 4:png.index(b'IEND') - 8])
+        alpha = lambda x, y: pixels[y * (1 + 32 * 4) + 1 + x * 4 + 3]
+        self.assertEqual(alpha(0, 0), 0)
+        self.assertEqual(alpha(16, 16), 255)
+
     def test_every_text_has_a_translation(self):
         table = (BUILDER / 'Strings.swift').read_text()
         known = set(re.findall(r'^        "((?:[^"\\]|\\.)*)": "', table, re.M))
