@@ -92,6 +92,10 @@ SHADER_BINDING = [
 # Profile switches: (key, the start of its value ('' = any), entry). A key is per-game data, so `game`; its goal is `host` where it is the semantics every game should get
 DEFAULT_SOON = 'a default for every game after `regress.py check` on the games'
 SWITCH_BINDING = [
+    ('start_behind', '', {'what': 'a started thread queues behind its pinned starter until the starter blocks', 'now': 'game', 'goal': 'host', 'purpose': 'runtime',
+     'why': "a workaround for Shredder's Revenge's own race on its graphics device; for every game it would need regression runs the key has not had"}),
+    ('eos_offline', '', {'what': 'an offline Epic Online Services platform', 'now': 'game', 'goal': 'host', 'purpose': 'runtime',
+     'why': "the game does not expect the SDK to fail; for every game it would need a run of Absolum and Hades, which take the failure path now"}),
     ('render_cond', '', {'what': 'NVN conditional rendering', 'now': 'game', 'goal': 'host', 'purpose': 'rendering',
      'why': f'what the GPU does; off by default only because other games drew everything before: {DEFAULT_SOON}'}),
     ('gpu_timestamps', '', {'what': 'timestamp reports per segment', 'now': 'game', 'goal': 'host', 'purpose': 'rendering', 'why': f'what hardware records: {DEFAULT_SOON}'}),

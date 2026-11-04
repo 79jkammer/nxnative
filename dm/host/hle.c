@@ -17,6 +17,8 @@ uint64_t unimpl_c(unsigned idx, uint64_t *regs) {
         g_stub_seen[idx] = 1;
         LOG("UNIMPL %s (x0=%#llx x1=%#llx x2=%#llx)", g_stub_name[idx], regs[0], regs[1], regs[2]);
     }
+    // Profile key eos_offline (hle_eos.c): an EOS call that hands back an object through a pointer reports EOS_NoConnection, not EOS_Success with no object (Shredder's Revenge: EOS_Lobby_UpdateLobbyModification, then a null read)
+    if (DM_GAME_EOS_OFFLINE && !strncmp(g_stub_name[idx], "EOS_", 4) && (strstr(g_stub_name[idx], "_Copy") || strstr(g_stub_name[idx], "Modification") || strstr(g_stub_name[idx], "_Create"))) return 1;
     return 0;
 }
 

@@ -113,6 +113,10 @@ def header(g):
     et = g.get('enc_thread', 'off')   # Metal encoding on its own thread on the Mac by default (nvn_rec.h rec_on; on iOS it is on for every game; DM_NVN_ENC_THREAD overrides): on / off
     if et not in ('on', 'off'): sys.exit(f'{g.id}: enc_thread must be on or off: {et}')
     cp = g.get('core_preempt', 'off')   # same-core preemption approximation (hle_thread.c): on / off
+    sb = g.get('start_behind', 'off')   # a started thread queues behind its pinned starter of the same core and priority (hle_thread.c): on / off
+    if sb not in ('on', 'off'): sys.exit(f'{g.id}: start_behind must be on or off: {sb}')
+    eh = g.get('eos_offline', 'off')   # EOS_Platform_Create gives a handle that exists (hle_eos.c): on / off
+    if eh not in ('on', 'off'): sys.exit(f'{g.id}: eos_offline must be on or off: {eh}')
     if cp not in ('on', 'off'): sys.exit(f'{g.id}: core_preempt must be on or off: {cp}')
     aba = g.get('alloc_big_align', 'off')   # nn::mem::StandardAllocator::Allocate aligns blocks of 64 KB or more to 64 KB (hle_os.c; Vanillaware's memory pool storage): on / off
     if aba not in ('on', 'off'): sys.exit(f'{g.id}: alloc_big_align must be on or off: {aba}')
@@ -170,6 +174,8 @@ def header(g):
          f'#define DM_GAME_DISPLAY_VERSIONS {vers}',
          f'#define DM_GAME_PRESENT_DISPLAY {int(pi == "display")}',
          f'#define DM_GAME_CORE_PREEMPT {int(cp == "on")}',
+         f'#define DM_GAME_START_BEHIND {int(sb == "on")}',
+         f'#define DM_GAME_EOS_OFFLINE {int(eh == "on")}',
          f'#define DM_GAME_ALLOC_BIG_ALIGN {int(aba == "on")}',
          f'#define DM_GAME_FPS_TARGET {int(ft)}',
          f'#define DM_GAME_FPS_HOLD {int(fh == "on")}',
