@@ -248,6 +248,24 @@ func checkScan(_ tmp: URL) throws {
     try fm.createDirectory(at: two.appendingPathComponent("0100AAAA00000000_build"), withIntermediateDirectories: true)
     check(GameScan.spaceNeeded(both, title: first) == 0 && GameScan.spaceNeeded(both, title: second) > 0, "only the first one was built")
 
+    // A file the player chose is the game, in a folder of others: nothing else counts as it, whether or not it can be identified
+    try pfs0([]).write(to: two.appendingPathComponent("New game.nsp"))
+    let downloads = try GameScan.scan(two)
+    check(downloads.unidentified.map(\.name) == ["New game.nsp"], "a file that says nothing about itself")
+    check(downloads.files(title: nil, file: "New game.nsp").map(\.name) == ["New game.nsp"], "only the chosen file, while its game is not known")
+    check(!downloads.files(title: second, file: "").contains { $0.name == "New game.nsp" }, "cleaning up another game does not offer it")
+    check(downloads.files(title: nil, file: "").count == downloads.packages.count, "a folder of one game is all of it")
+    check(GameFolder.displayName("New game.nsp") == "New game" && GameFolder.displayName("Second [0100BBBB00000000][v0].nsp") == "Second", "a file's game name")
+    check(GameScan.spaceNeeded(downloads, title: nil, file: "New game.nsp") > 0, "another game's build folder is not this one's")
+    var byFile = BuildOptions()
+    byFile.gameFile = "New game.nsp"
+    check(byFile.arguments().contains("--game-file"), "the file names the game")
+    byFile.titleID = "0100AAAA00000000"
+    check(!byFile.arguments().contains("--game-file") && byFile.arguments().contains("--title-id"), "the title ID does, once it is known")
+    try fm.removeItem(at: two.appendingPathComponent("New game.nsp"))
+    check(XcodeInstall.bundleID(team: "ABC123DEFG", title: nil) == "org.nxnative.uabc123defg.{title}", "a bundle ID the script finishes")
+    if case .game("0100AAAA00000000")? = BuildEvent.parse(#"{"ev":"game","title_id":"0100AAAA00000000"}"#) {} else { check(false, "the game event") }
+
     // A package that says nothing about itself, and a merged one
     let bare = tmp.appendingPathComponent("bare")
     try fm.createDirectory(at: bare, withIntermediateDirectories: true)

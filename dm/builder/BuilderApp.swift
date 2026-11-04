@@ -357,21 +357,21 @@ struct GameCard: View {
                     Text((game.url.path as NSString).abbreviatingWithTildeInPath)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
-                if game.titles.count > 1 {
-                    Picker(L("Game to build"), selection: Binding(get: { m.options.titleID }, set: { m.chooseTitle($0) })) {
-                        if m.needsGameChoice { Text(L("Choose…")).tag("") }
+                if m.needsGameChoice {   // only for a folder: a file the player chose is the game
+                    Picker(L("Game to build"), selection: Binding(get: { "" }, set: { $0.hasPrefix("/") ? m.chooseFile(String($0.dropFirst())) : m.chooseTitle($0) })) {
+                        Text(L("Choose…")).tag("")
                         ForEach(game.titles, id: \.self) { Text(m.name(of: $0)).tag(GameScan.hex($0)) }
+                        ForEach(game.unidentified) { Text(GameFolder.displayName($0.name)).tag("/" + $0.name) }
                     }
-                    if m.needsGameChoice {
-                        Label(L("This folder holds %@ games. Choose the one to build.", "\(game.titles.count)"), systemImage: "arrow.up").font(.callout).foregroundStyle(.orange)
-                    }
+                    Label(L("This folder holds %@ games. Choose the one to build.", "\(m.gameChoices)"), systemImage: "arrow.up").font(.callout).foregroundStyle(.orange)
                 }
                 if let t = m.selectedTitle { profileStatus(t) }
+                else if m.gameIsFile { Label(L("The game is recognized when the build starts."), systemImage: "doc").font(.callout).foregroundStyle(.secondary) }
                 if m.advancedMode {
                     if game.isDump {
                         Text(L("A folder of the game's files, %@.", formatBytes(Double(game.bytes)))).font(.callout).foregroundStyle(.secondary)
                     }
-                    if !m.needsGameChoice { ForEach(game.packages(of: m.selectedTitle)) { packageRow($0) } }
+                    if !m.needsGameChoice { ForEach(game.files(title: m.selectedTitle, file: m.options.gameFile)) { packageRow($0) } }
                 }
             }
         } else {

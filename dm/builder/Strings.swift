@@ -95,6 +95,7 @@ enum Lang {
         "A folder or a file: .nsp, .nsz, .xci or .xcz. Use a game you own.": "Папка или файл .nsp, .nsz, .xci, .xcz. Используйте свою игру.",
         "Which game?": "Какая игра?",
         "Game to build": "Игра для сборки",
+        "The game is recognized when the build starts.": "Игра определится в начале сборки.",
         "This folder holds %@ games. Choose the one to build.": "В этой папке игр: %@. Выберите нужную.",
         "Ready to build · %@": "Можно собирать · %@",
         "This game can be built.": "Эту игру можно собрать.",

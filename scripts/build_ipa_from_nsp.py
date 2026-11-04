@@ -494,6 +494,14 @@ def package_title_reader(repo, keys, env):
         yield read
 
 
+def game_of_file(path, from_package=None):   # the application title ID of the game a package belongs to: an update's or a DLC's game, as scan_nsps groups them
+    if not path.is_file(): raise BuildError(f'no such game file: {path}')
+    tid = title_of(path, from_package)
+    if tid is None: raise BuildError(f'the game in {path.name} could not be read: it has neither a ticket nor a [title ID] in its name, and its package did not say')
+    low = tid & 0xFFF
+    return tid if low == 0 else tid & ~0xFFF if low == 0x800 else (tid & ~0xFFF) - 0x1000
+
+
 def version_of(path):
     m = re.search(r'\[v(\d+)\]', path.name)
     return int(m.group(1)) if m else None
@@ -2326,6 +2334,7 @@ def parse_args(argv):
     ap.add_argument('nsp_dir', nargs='?', help='folder holding one game\'s NSPs, or its files as a dump (scripts/pack_dump.py lists the layout) (default: the NSP_DIR setting, else asked)')
     ap.add_argument('-k', '--keys', help='path of prod.keys, not needed for a dump folder (default: the PROD_KEYS setting, else asked)')
     ap.add_argument('--title-id', help='the game to pack when the folder holds several (a cartridge dump with two games): its title ID, 16 hex digits (default: the TITLE_ID setting)')
+    ap.add_argument('--game-file', help='the game to pack when the folder holds several, as the name of one of its files in the folder: for a player who chose a file, whose title ID may be known only from the package itself')
     ap.add_argument('-p', '--package', help='version packed into the IPA, e.g. v327680 / v0 (default: the newest in the folder)')
     ap.add_argument('-o', '--out', help='output IPA, or app with --platform mac-app (default: <the profile\'s ipa>, or <game name>.app, in the NSP folder)')
     ap.add_argument('--app-name', help='app name on the home screen (default: the game name in the base NSP)')
@@ -2465,8 +2474,11 @@ def main(args=None):
         app, fam = scan_dump(nsp_dir, int(want, 16) if want else None)
         say(f'a dump folder: {app:016X}, {len(fam["updates"])} update(s), {len(fam["dlc"])} DLC')
     else:
-        with package_title_reader(repo, keys, env) as from_package: app, fam = scan_nsps(nsp_dir, from_package, from_package.contents, int(want, 16) if want else None)
+        with package_title_reader(repo, keys, env) as from_package:
+            if args.game_file and not want: want = f'{game_of_file(nsp_dir / args.game_file, from_package):016X}'
+            app, fam = scan_nsps(nsp_dir, from_package, from_package.contents, int(want, 16) if want else None)
         fam = decompress_nsz(nsp_dir, app, fam, keys, env, work_dir(args))
+    PROG.event('game', title_id=f'{app:016X}')
     force =args.provisional or PROVISIONAL   # a provisional profile even when dm/games has one (testing the guesses)
     g, provisional, shadowed = None if force else gamemod.by_title(app), False, False
     if dump and (force or g is None): raise BuildError(f'a dump folder packs only a game with a profile, and {app:016X} ' + ('asked for a provisional one (--provisional)' if g else 'has none') + ': the survey that makes a provisional profile reads NSPs')
@@ -2586,7 +2598,7 @@ def main(args=None):
     # the app name and bundle ID both come from the base NSP: the game name in its control data, and a bundle ID from its title ID; a setting / the command line overrides them
     app_name = args.app_name or APP_NAME or nacp.name(base / 'control.nacp') or (g.get('name') if dump else '')   # a dump has no control data
     if not app_name and not (mac and not mac_pack): raise BuildError(f'no game name in the base extraction ({base / "control.nacp"}; an older extraction did not save it: delete extract/ and run again, or give --app-name)')
-    bundle_id = args.bundle_id or BUNDLE_ID or saved_signing.get('PRODUCT_BUNDLE_IDENTIFIER') or f'org.nxnative.{app:016x}'
+    bundle_id = (args.bundle_id or BUNDLE_ID or saved_signing.get('PRODUCT_BUNDLE_IDENTIFIER') or f'org.nxnative.{app:016x}').replace('{title}', f'{app:016x}')   # {title}: for a caller that does not know the game yet
     team_id = args.team_id or TEAM_ID or env.get('DM_TEAM_ID') or saved_signing.get('DEVELOPMENT_TEAM') or '0000000000'
     if prepare_xcode:
         try: xcode_projects.check_bundle_id(workspace, project, bundle_id)

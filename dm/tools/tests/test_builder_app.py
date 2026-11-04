@@ -58,7 +58,7 @@ class BuilderAppTests(unittest.TestCase):
     def test_events_are_the_scripts(self):   # the event names the app reads are the ones docs/frontends.md promises
         doc = (REPO / 'docs/frontends.md').read_text()
         core = (BUILDER / 'BuildCore.swift').read_text()
-        for ev in ('stage', 'step', 'progress', 'stage_end', 'shaders_stale', 'say'):
+        for ev in ('stage', 'step', 'progress', 'stage_end', 'shaders_stale', 'say', 'game'):
             self.assertIn(f'| `{ev}` |', doc)
             self.assertIn(f'case "{ev}":', core)
 
