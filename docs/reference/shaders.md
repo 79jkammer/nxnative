@@ -287,6 +287,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Pairing:** a pass names its vertex and pixel shader by index, 255 for none, and 10 of the 13 effects have no vertex shader: SpriteBatch binds its own and the effect's pass only replaces the pixel shader. Vertex and pixel shaders therefore combine across effects, and they are paired as single-stage programs.
 - **Found on:** [Celeste](../../dm/games/01002B30028F6000/README.md) (MonoGame for the Switch, its C# compiled to C++ by Sickhead's BRUTE): 26 shaders (20 pixel, 6 vertex), all with Mario's binding layout; every binding decodes. [Stardew Valley](../../dm/games/0100E65002BB8000/README.md) (compressed XNB).
 
+### Diesel programs in stream bundles
+
+- **Symptom:** `the shader split found no shaders in main or the RomFS` on a game whose `assets/` folder holds `stream_*_<n>.bundle` files and a `bundle_db.blb`; at run time, `[RED] shader … is not in the shader map`.
+- **Cause:** Diesel keeps its compiled programs in zlib streams among stored audio inside bundles of up to 2 GB, so no shader magic shows in the files. A program has no magic of its own: each stage has a record {u64 control offset, u64 code offset, u32 code length, u32 control length}, with the offsets from the program's start, at any alignment.
+- **Fix:** `shader_split.py` walks the numbered stream bundles beside a `bundle_db.blb` (`diesel_streams`: a stream ends where zlib says, with its Adler-32 checked, and anything else moves on to the next zlib header). It takes a record (`diesel_shaders`) only when it names that control section and a code area whose lengths and stage agree, and it names any control section with no record in a red line.
+- **Found on:** [PAYDAY 2](../../dm/games/0100274004052000/README.md): 1,534 shaders (767 vertex, 767 pixel) in about a minute, all of which translate; the 50 shaders dumped from a run (`DM_NVN_SHDUMP`) are among them with the same keys.
+- **Check:** `test_split_diesel.py` uses authored streams and programs.
+
 ### MGFX version 10 effects in raw deflate `.zxnb` files
 
 - **Symptom:** `the shader split found no shaders in main or the RomFS` on a MonoGame game whose RomFS holds `.zxnb` files, with `[RED] main control section @… : no code area` lines in `shader_split.log`.

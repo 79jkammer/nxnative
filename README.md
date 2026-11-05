@@ -314,6 +314,11 @@ Under a game, "60 fps with 1.2.0" means it runs at 60 fps (30 on the Switch) wit
 <td align="center" valign="top" width="33%"><img src="docs/images/super-mario-rpg.jpg" width="256" alt="Super Mario RPG"><br><small><b><a href="dm/games/0100BC0018138000/README.md">Super Mario RPG</a></b></small></td>
 <td align="center" valign="top" width="33%"><img src="docs/images/teenage-mutant-ninja-turtles-shredders-revenge.jpg" width="256" alt="Teenage Mutant Ninja Turtles: Shredder's Revenge"><br><small><b><a href="dm/games/0100FE701475A000/README.md">Teenage Mutant Ninja Turtles: Shredder's Revenge</a></b></small></td>
 </tr>
+<tr>
+<td align="center" valign="top" width="33%"><img src="docs/images/payday-2.jpg" width="256" alt="PAYDAY 2"><br><small><b><a href="dm/games/0100274004052000/README.md">PAYDAY 2</a></b></small></td>
+<td></td>
+<td></td>
+</tr>
 </table>
 <!-- end of gallery -->
 

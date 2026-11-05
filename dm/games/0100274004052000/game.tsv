@@ -1,0 +1,32 @@
+
+# ---- Identity ----
+title_id	0100274004052000
+program_id	0100274004052000
+
+# ---- App ----
+name	PAYDAY 2
+ipa	Payday2.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v0	1.1.0	main=aea19bda16e7a34fe8a2592fcdef5964	subsdk0=80d47ec27d36e0fe5b5643c07d706513	sdk=8bb65519bc6399ab432e0ba7cdb16e2b
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+modules	main subsdk0 sdk
+romfs_marker	assets/stream_init_0.bundle
+zip_store	.bfs:.blb:.bmp:.bundle:.idstring_lookup:.mp4:.zip:.metallib
+
+# ---- Memory ----
+# the game takes a 16 GB address region at alias +1.66 GB: a 20 GB alias region (the Mac; over iOS's limit)
+mem_reserve	0x650000000
+mem_alias	0x500000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+shader_groups	/assets/=assets /movies/=movies /Icons/=icons /build_version/=buildversion /vibration_data/=vibrationdata
+shader_note	PAYDAY 2 shaders
