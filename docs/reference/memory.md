@@ -92,6 +92,14 @@ The guest address space, heaps, pools, virtual address memory and the allocators
 - **Fix:** [`dm/gfx/hle_nv.c`](../../dm/gfx/hle_nv.c) answers the five `nv::` symbols such a game imports: it records the allocator callbacks (`SetGraphicsAllocator`, `SetGraphicsDevtoolsAllocator`) and the pool from `InitializeGraphics(void*, size_t)`, and `GetGraphicsMemoryInfo` reports that pool (total and free = its size) or zeroes the structure when nothing was initialised. It writes the record of the game's SDK: 0x20 bytes when `DM_SDK_OLD(dm_sdk_major())`, 0x40 otherwise (the boundary the NVN API version and the shared-font layout follow too); the pool figures lie in the first four counters, so both sizes carry them.
 - **Found on:** [Well Dweller](../../dm/games/0100217023F6C000/README.md) (SDK 22.2.0, GameMaker Studio 2, OpenGL through EGL). The game's allocator is never called again, so a zeroed report is equally correct on a GL-only title. The 32-byte overrun on old SDKs was found on Hyrule Warriors: Definitive Edition 1.0.1 (SDK 3.5.1, KTGL, NVN; GitHub issue #708, [PR #709](https://github.com/seedds/nxnative/pull/709)): its startup caller passes a 32-byte record, and AddressSanitizer reported the write past it.
 
+### A game's own address region past the alias region of a Mac build
+
+- **Symptom:** `[RED] address regions: in its first 15 s in nnMain the game's regions reach alias +…` in the NSP script's log, then the built app crashes before `nnMain` (exit 139).
+- **Cause:** the region check runs with a Switch-sized alias region, so the game gets its request there, but the app runs with the profile's. A game's own `nn::os::AllocateAddressRegion` of more than that fails, and the region check only reported it, as the fix on an iPhone depends on who lays the region out.
+- **Fix:** a Mac has the address space, so the check of a Mac build (`--platform mac` or `mac-app`) raises `mem_alias` and `mem_reserve` of a provisional or derived profile to hold the regions it saw, plus 2 GB, in whole GB (`profile_guess.py` `mac_alias_needed`). The reason line names the earlier layout, and an iPhone build of that profile puts it back (`checked_alias`). Each target has its own stamp, so changing target checks again. The iPhone case stays a red line. A StandardAllocator region does not count, as the host makes it fit.
+- **Found on:** [PAYDAY 2](../../dm/games/0100274004052000/README.md): 16 GB at +1.66 GB gives the 20 GB its registered profile holds.
+- **Check:** `test_profile_guess.py` and `test_nsp_incremental.py`.
+
 ### An SDK 21 Switch 2 game with a 4.5 GB alias region
 
 - **Symptom:** a null pointer in the game's resource code (`main+0x15a69b0`, null + 0x78, thread `BaseProcCreateAndDeleteThread`): a model's load returned null, its status 9, written hundreds of times by a loader thread. The `[mem]` lines end near the top of the alias region.

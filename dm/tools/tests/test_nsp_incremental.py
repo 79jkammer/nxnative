@@ -291,6 +291,27 @@ class DeriveProfile(Base):
         g = check(AssertionError('a value set by hand is checked, not worked out again'))
         self.assertEqual(g.get('stdalloc_cap'), '0xa0000000')
 
+    def test_region_check_raises_the_alias_region_for_a_mac_build(self):   # raised for the Mac, worked out again from the first layout, put back for an iPhone build; each target has its own stamp
+        with (self.src / 'game.tsv').open('a') as f: f.write('mem_reserve\t0x140000000\nmem_alias\t0x118000000\n')
+        self.derive(); patched = self.tmp / 'work/patched_v65536'; key = patched.with_name(patched.name + '.key')
+        key.parent.mkdir(parents=True); key.write_text('a' * 64 + '\n')
+        logs = self.tmp / 'logs'; logs.mkdir()
+        def check(mac, size=0x400000000):
+            def boot(*args): (logs / 'region_check.log').write_text('>>> nnMain\n'); (logs / 'regions.tsv').write_text(f'0x6a400000\t{size:#x}\tmain+0x10\t0\t-\t-\t0\n'); return 0
+            with mock.patch.object(nsp, 'build_mac_host'), mock.patch.object(nsp, 'boot_mac', side_effect=boot):
+                return nsp.region_check(REPO, self.ex, patched, self.tmp / 'work', {}, logs, game.Game(self.pdir), mac)
+        layout = lambda g: (g.get('mem_alias'), g.get('mem_reserve'))
+        g = check(True)
+        self.assertEqual(layout(g), ('0x500000000', '0x528000000')); self.assertEqual(nsp.checked_alias(g), (0x118000000, 0x140000000))
+        self.assertTrue(nsp.region_checked(g, patched, True)); self.assertFalse(nsp.region_checked(g, patched))
+        g = check(True, 0x800000000); self.assertEqual(layout(g), ('0x900000000', '0x928000000'))   # from the first layout, not the raised one
+        self.assertEqual(nsp.checked_alias(g), (0x118000000, 0x140000000))
+        self.assertEqual(sum(l.startswith('mem_alias\t') for l in g.table('game.tsv').read_text().splitlines()), 1)
+        g = check(False)
+        self.assertEqual(layout(g), ('0x118000000', '0x140000000')); self.assertIsNone(nsp.checked_alias(g))
+        self.assertTrue(nsp.region_checked(g, patched)); self.assertFalse(nsp.region_checked(g, patched, True))
+        g = check(True, 0x10000000); self.assertEqual(layout(g), ('0x118000000', '0x140000000'))   # regions that fit change nothing
+
     def test_rewrite_changes_update_auto_mem_used(self):
         self.derive(); g = game.Game(self.pdir); reg = game.Game(self.src)
         with mock.patch.object(nsp.pg, 'mem_used') as used:
