@@ -1588,6 +1588,50 @@ def sumo_shaders(d, label):
         out.append(sumo_program(d, h, size, co, ko, cn, kn, f'{label}#NVNSH@{h:#x}', STAGES[stage]))
     return out
 
+DIESEL_ZLIB = re.compile(rb'\x78[\x01\x5e\x9c\xda]')
+def diesel_streams(d, start=0, end=None):
+    """The zlib streams of a Diesel stream bundle (PAYDAY 2's assets/stream_*_<n>.bundle, up to 2 GB each). The streams lie among stored audio and per-file records whose layout the bundle's own header holds, so
+    they are found by the walk: a stream ends where zlib says, its Adler-32 checked; anything else moves on to the next zlib header. → (its offset, inflated bytes)"""
+    pos, end = start, len(d) if end is None else end
+    while pos < end:
+        z, parts, q = zlib.decompressobj(), [], pos
+        try:
+            while not z.eof and q < end:
+                w = d[q:min(q + (1 << 20), end)]; parts.append(z.decompress(w)); q += len(w)
+        except zlib.error: parts = None
+        if not parts or not z.eof or not any(parts):
+            m = DIESEL_ZLIB.search(d, pos + 1, end)
+            if not m: return
+            pos = m.start(); continue
+        yield pos, b''.join(parts)
+        pos = q - len(z.unused_data)
+
+def diesel_shaders(d, label):
+    """Diesel's compiled programs (PAYDAY 2's shader packages): each stage has a record {u64 control offset, u64 code offset, u32 code length, u32 control length} ahead of its control section, the offsets from
+    the program's start, the whole program at any alignment. No program magic: a record is taken only when it names this control section and a code area whose lengths and stage agree with it. A control section
+    with no such record is named, since a game with a section the reader passes over would lack a shader at run time"""
+    out, lost = [], 0
+    for m in re.finditer(re.escape(CTL_MAGIC), d):
+        c = m.start()
+        if c + 0x708 > len(d): continue
+        nctl, ncode = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
+        need, r, got = struct.pack('<2I', ncode, nctl), c, None
+        while got is None and (r := d.rfind(need, max(16, c - 0x4000), r)) >= 0:
+            co, ko = struct.unpack_from('<2Q', d, r - 16)
+            base = c - co
+            if co > c or base > r - 16 or base + ko + ncode > len(d): continue
+            ctl, code = d[c:c + nctl], d[base + ko:base + ko + ncode]
+            st = glslc_stage(ctl, code)
+            if st and not check(label, st, ctl, code): got = base, st, ctl, code
+        if got: out.append((f'{label}#Diesel@{got[0]:#x}#var', got[1], got[2], got[3]))
+        else: lost += 1
+    if lost: print(f'[RED] {label}: {lost} control section(s) with no program record: their shaders are left out', flush=True)
+    return out
+
+def diesel_bundle(path):
+    """A Diesel stream bundle: a numbered stream_<package>_<n>.bundle beside the bundle database"""
+    return re.fullmatch(r'stream_\w+_\d+\.bundle', os.path.basename(path)) is not None and os.path.exists(os.path.join(os.path.dirname(path), 'bundle_db.blb'))
+
 def phyre_shaders(d, label):
     """Phyre's NVN code immediately precedes its control section, unaligned in RYHP effects; loose blobs also prefix their two lengths (FFX/X-2)."""
     out = []
@@ -2575,6 +2619,12 @@ def scan_file_in(args):
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2:   # a range of LINKDATA entries (linkdata_jobs)
         linkdata_shaders(path, rel, args[2], found)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if diesel_bundle(path):   # PAYDAY 2's stream bundles, up to 2 GB each (diesel_streams)
+        from romfs import mmap
+        with open(path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as d:
+            for at, data in diesel_streams(d):
+                if CTL_MAGIC in data: found += diesel_shaders(data, f'/{rel}@{at:#x}')
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:4] == BND2:   # a Criterion Bundle 2 (Need for Speed: Hot Pursuit Remastered's SHADERS.BNDL): GLSLC outputs in its zlib resources (bnd2_shaders)
         found += bnd2_shaders(open(path, 'rb').read(), '/' + rel)
