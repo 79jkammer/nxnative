@@ -1653,11 +1653,25 @@ def rewrite_id(patched):   # the rewrite's key (rewrite: what the rewritten modu
     except OSError: return ''
 
 
-def region_checked(g, patched):   # the region check's stamp in the profile ("# address regions: ... (rewrite <id>)"): later runs of the same rewrite skip it (a new cut checks again)
-    return any(l.startswith('# address regions: ') and l.endswith(f'(rewrite {rewrite_id(patched)})') for l in (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines())
+def region_stamp(patched, mac):   # the end of the region check's stamp: a Mac build's check can change the alias region, an iPhone build's puts it back, so each needs its own
+    return f'(rewrite {rewrite_id(patched)}{", mac" if mac else ""})'
+
+
+def region_checked(g, patched, mac=False):   # the region check's stamp in the profile ("# address regions: ... (rewrite <id>)"): later runs of the same rewrite and target skip it (a new cut checks again)
+    return any(l.startswith('# address regions: ') and l.endswith(region_stamp(patched, mac)) for l in (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines())
 
 
 CHECKED_CAP = 'from the address region check'   # the reason line of a stdalloc_cap the region check set (checked_cap): a later check works it out again
+
+
+CHECKED_ALIAS = 'for a Mac build, from the address region check'   # the reason line of a mem_alias the region check raised (checked_alias), which names the layout it replaced
+
+
+def checked_alias(g):   # (mem_alias, mem_reserve) the region check replaced for a Mac build, None when the profile's are its own
+    lines = (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines()
+    for i, l in enumerate(lines):
+        if l.startswith('mem_alias\t') and i and (m := re.match(rf'# {CHECKED_ALIAS} \(was mem_alias (0x[0-9a-f]+), mem_reserve (0x[0-9a-f]+)\)', lines[i - 1])): return int(m[1], 16), int(m[2], 16)
+    return None
 
 
 def checked_cap(g):   # the profile's stdalloc_cap row is the one an earlier region check set
@@ -1665,13 +1679,14 @@ def checked_cap(g):   # the profile's stdalloc_cap row is the one an earlier reg
     return any(l.startswith('stdalloc_cap\t') and i and lines[i - 1].startswith(f'# {CHECKED_CAP}') for i, l in enumerate(lines))
 
 
-def region_check(repo, d, patched, work, env, logs, g):
+def region_check(repo, d, patched, work, env, logs, g, mac=False):
     """The address region check of a provisional or derived profile whose game has virtual address memory: the game boots in the Mac host (headless and silent, no shader libraries) with a
     Switch-sized alias region (DM_ALIAS_SIZE), so whatever it reserves fits, until it has run REGION_CHECK_NNMAIN_SECS in nnMain. The host's region table (DM_REGIONS, from the
     observation gates the rewriter places in the sdk) says which regions the game took, where each request returns to in the game, through which SDK API and how much of it it used, and where they reach
     against the profile's alias region (profile_guess.py region_findings). A red line when they reach past it: on an iPhone a region would fail. The one fix it makes: when the
     regions made after a StandardAllocator region need more room than the host's cap leaves them, it sets stdalloc_cap (profile_guess.py stdalloc_room), unless the profile sets one
-    by hand, which it checks instead (Absolum: 2.56 GB from its first seconds; 2.5 and 2.72 GB both play). Others are reported, not changed: the fix depends on who lays the region out. A derived profile gets it too: its build has none of the registered builds' fixed-address cuts, only the function-matched ones
+    by hand, which it checks instead (Absolum: 2.56 GB from its first seconds; 2.5 and 2.72 GB both play). Others are reported, not changed: the fix depends on who lays the region out. A Mac build (mac) has the address space, so it raises
+    the alias region to hold them instead (profile_guess.py mac_alias_needed), and an iPhone build of that profile puts the earlier layout back (checked_alias). A derived profile gets it too: its build has none of the registered builds' fixed-address cuts, only the function-matched ones
     (Super Smash Bros. Ultimate 13.0.1, GitHub issue #375), so a region those cuts shrank shows here before the IPA aborts on an iPhone. The profile is stamped"""
     PROG.stage('address regions')
     host, rd, log, table = work / 'tools/dmhost', work / 'tmp/region_run', logs / 'region_check.log', logs / 'regions.tsv'
@@ -1698,7 +1713,15 @@ def region_check(repo, d, patched, work, env, logs, g):
     try: rows = table.read_text(errors='replace')
     except OSError: rows = ''
     import nso_syms
-    alias, syms = int(g.get('mem_alias'), 0), nso_syms.defined(nso_syms.load(d / 'ExeFS/sdk')) if (d / 'ExeFS/sdk').exists() else {}
+    syms = nso_syms.defined(nso_syms.load(d / 'ExeFS/sdk')) if (d / 'ExeFS/sdk').exists() else {}
+    was = checked_alias(g); alias0 = was[0] if was else int(g.get('mem_alias'), 0)
+    raised = pg.mac_alias_needed(pg.region_rows(rows, syms), alias0) if mac and rows else None
+    if (raised or alias0) != int(g.get('mem_alias'), 0):
+        reserve0 = was[1] if was else int(g.get('mem_reserve'), 0)
+        why = f'{CHECKED_ALIAS} (was mem_alias {alias0:#x}, mem_reserve {reserve0:#x}): the game\'s own regions reach past that alias region' if raised else ''
+        g = set_keys(g, {'mem_alias': (f'{raised or alias0:#x}', why), 'mem_reserve': (f'{reserve0 + (raised or alias0) - alias0:#x}', '')}, 'Address region check')
+        say(f'address regions: mem_alias {raised:#x} ({raised / 2**30:.2f} GB) set in {g.dir / "game.tsv"} for this Mac build' if raised else f'address regions: mem_alias back to {alias0:#x}, the layout an earlier Mac build replaced')
+    alias = int(g.get('mem_alias'), 0)
     have = 0 if checked_cap(g) else int(g.get('stdalloc_cap', '0'), 0)   # a value set by hand (or the registered profile's) stays; one an earlier check wrote is worked out again
     if not have and rows:
         need = pg.stdalloc_cap_needed(pg.region_rows(rows, syms), alias)
@@ -1712,7 +1735,7 @@ def region_check(repo, d, patched, work, env, logs, g):
     else: how = found[-1][1]
     for red, text in found: say(('[RED] ' if red else '') + 'address regions: ' + text)
     p = g.dir / 'game.tsv'; old = [l for l in p.read_text(encoding='utf-8').rstrip('\n').split('\n') if not l.startswith('# address regions: ')]
-    atomic_text(p, '\n'.join(old).rstrip('\n') + f'\n\n# address regions: {time.strftime("%Y-%m-%d")}, {how} (rewrite {rewrite_id(patched)})\n')
+    atomic_text(p, '\n'.join(old).rstrip('\n') + f'\n\n# address regions: {time.strftime("%Y-%m-%d")}, {how} {region_stamp(patched, mac)}\n')
     PROG.end(f'{how} in {hms(time.time() - t0)}', ok=not any(red for red, _ in found))
     return type(g)(g.dir)
 
@@ -2622,8 +2645,8 @@ def main(args=None):
         if provisional and heapck and pg.heap_check_needed(game / 'ExeFS'):
             if apple_silicon(): PROG.add(1); g = heap_check(repo, game, patched, work, env, logs, g)
             else: say('no heap check: it boots the game in the Mac host, which needs a Mac with Apple silicon; the profile keeps its guessed heap keys')
-        if HEAP_CHECK and not args.no_heap_check and pg.has_va(game / 'ExeFS') and not region_checked(g, patched) and apple_silicon():   # where its address regions reach (a derived build too: the registered builds' cuts do not reach it)
-            PROG.add(1); g = region_check(repo, game, patched, work, env, logs, g)
+        if HEAP_CHECK and not args.no_heap_check and pg.has_va(game / 'ExeFS') and not region_checked(g, patched, mac) and apple_silicon():   # where its address regions reach (a derived build too: the registered builds' cuts do not reach it)
+            PROG.add(1); g = region_check(repo, game, patched, work, env, logs, g, mac)
     if glslc: capture_glslc(repo, {v: dirs[v] for v in sv}, pkg_ver, patched, work, env, logs, g)
     if uedec: decode_ue_shaders(repo, {v: dirs[v] for v in sv}, pkg_ver, patched, work, env, logs, g)
     sh = work / 'shader'

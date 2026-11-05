@@ -18,7 +18,7 @@ On the Mac (2026-11-05): a scripted run on an M1 through the title, the menus an
 
 ## Memory
 
-- A request returning to `main+0x4c7ae8` takes 16 GB through `nn::os::AllocateAddressRegion` at alias +1.66 GB in `nninitStartup`; 1.9 GB of it was mapped in the first 15 s. With the 4.38 GB alias region the survey guessed, the host crashes before `nnMain` (exit 139). Measured with `DM_ALIAS_SIZE=0x1000000000` and `DM_REGIONS`.
+- A request returning to `main+0x4c7ae8` takes 16 GB through `nn::os::AllocateAddressRegion` at alias +1.66 GB in `nninitStartup`; 1.9 GB of it was mapped in the first 15 s. With the 4.38 GB alias region the survey guessed, the host crashes before `nnMain` (exit 139). Measured with `DM_ALIAS_SIZE=0x1000000000` and `DM_REGIONS`. The Mac build's region check now gets the same value by itself ([reference](../../../docs/reference/memory.md#a-games-own-address-region-past-the-alias-region-of-a-mac-build)).
 
 ## Driving it on the Mac
 
@@ -27,6 +27,7 @@ On the Mac (2026-11-05): a scripted run on an M1 through the title, the menus an
 ## Found on this game
 
 - [Diesel programs in stream bundles](../../../docs/reference/shaders.md#diesel-programs-in-stream-bundles): resolved.
+- [A game's own address region past the alias region of a Mac build](../../../docs/reference/memory.md#a-games-own-address-region-past-the-alias-region-of-a-mac-build): resolved on the Mac, open on the iPhone.
 
 ## Open
 

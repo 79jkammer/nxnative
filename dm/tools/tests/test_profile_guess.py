@@ -92,6 +92,17 @@ class AddressRegions(unittest.TestCase):
     SYMS = {'_ZN2nn3mem17StandardAllocator10InitializeEPvmb': (0x1000, 0x100), '_ZN2nn2os21AllocateAddressRegionEPmm': (0x2000, 0x40)}
     HEAD = '# alias region 0x1000000000; offset\tsize\twho\tmapped\tfirst opened\tend\tvia\n'
 
+    def test_mac_alias(self):
+        own = self.HEAD + '0x6a400000\t0x400000000\tmain+0x4c7ae8\t0x79a50000\t0\t0x7fa90000\t0x2010\n'   # PAYDAY 2's 16 GB region
+        rows = lambda t: pg.region_rows(t, self.SYMS)
+        self.assertEqual(pg.mac_alias_needed(rows(own), 0x118000000), 0x500000000)
+        self.assertIsNone(pg.mac_alias_needed(rows(own), 0x500000000))
+        alloc = self.HEAD + '0x4000000\t0x400000000\tmain+0x10\t0\t-\t-\t0x1010\n'
+        self.assertIsNone(pg.mac_alias_needed(rows(alloc), 0x118000000))   # the host makes a StandardAllocator region fit
+        huge = self.HEAD + '0x4000000\t0xf80000000\tmain+0x10\t0\t-\t-\t0x2010\n'
+        self.assertEqual(pg.mac_alias_needed(rows(huge), 0x118000000), 0x1000000000)   # at most the Switch's
+        self.assertIsNone(pg.mac_alias_needed([], 0x118000000))
+
     def test_demangle(self):
         self.assertEqual(pg.demangle('_ZN2nn3mem17StandardAllocator10InitializeEPvmb'), 'nn::mem::StandardAllocator::Initialize')
         self.assertEqual(pg.demangle('memcpy'), 'memcpy')

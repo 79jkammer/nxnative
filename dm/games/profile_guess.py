@@ -364,6 +364,15 @@ def stdalloc_cap_needed(rows, alias):   # the stdalloc_cap the regions need (the
     return min(caps) if caps else None
 
 
+def mac_alias_needed(rows, alias):
+    """The alias region a Mac build needs (the Mac's address space has room, an iPhone's does not), or None when alias holds them: the reach of the regions in the table (region_rows) past it, with
+    MAC_ALIAS_ROOM for what the game takes later, in whole GB, at most the Switch's 64 GB. A StandardAllocator region does not count: the host makes it fit (region_findings). PAYDAY 2's own 16 GB region
+    at +1.66 GB gives 20 GB; with the guessed 4.38 GB the host crashed before nnMain"""
+    own = [r['off'] + r['size'] for r in rows if not (r['api'] and 'StandardAllocator' in r['api'])]
+    if not own or max(own) <= alias: return None
+    return min(SWITCH_ALIAS, (max(own) + MAC_ALIAS_ROOM + 0x3fffffff) & ~0x3fffffff)
+
+
 def region_findings(table, alias, sdk_syms=None, secs=15, cap=0):
     """[(red, text)] from the host's address region table (DM_REGIONS, hle_svc.c "Address regions") of a run with a Switch-sized alias region, against the profile's alias
     region (the layout an iPhone runs): where the regions reach, and for each of 256 MB or more where the request returns to in the game (the first return address outside the
@@ -406,6 +415,8 @@ def region_findings(table, alias, sdk_syms=None, secs=15, cap=0):
 
 
 STDALLOC_LATER = 0x10000000   # the room the host leaves after a StandardAllocator region (hle_svc.c STDALLOC_LATER)
+MAC_ALIAS_ROOM = 0x80000000   # mac_alias_needed: the room past what the region check saw
+SWITCH_ALIAS = 0x1000000000   # the Switch's alias region (64 GB)
 NODE_AREA = 0x3e00000         # the SDK's node area at the start of the alias region, with the SDK-wide cut (sdk_patches.py)
 
 
