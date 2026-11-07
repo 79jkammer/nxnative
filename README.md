@@ -1,8 +1,45 @@
-# nxnative
+# Slotless
 
-Play your own Nintendo Switch games natively on iPhone and iPad. Bring your game (its NSP files) and your `prod.keys`; one script turns them into an IPA that you sideload.
+**Your own Nintendo Switch games as real apps for your Mac and iPhone.** Add your game and your keys, press one button, and play it like any other app. It is not an emulator: the game's own code runs directly on the Apple chip, with its graphics rebuilt on Metal.
 
-It is not an emulator: the game's own code runs directly on the Apple chip, with Switch graphics rebuilt on Metal. Nothing from any game is in this repository, and the project is not affiliated with Nintendo or any game publisher.
+Free and open source, with no account, no ads and no command line.
+
+**[Download Slotless for Mac](https://github.com/BorisChubiryaev/nxnative/releases/latest/download/Slotless.zip)** · [Website](https://slotless.pages.dev) · [Tested games](dm/games/README.md#games) · [VK](https://vk.ru/club242996182) · [Support the project](https://boosty.to/oldnewborispro)
+
+<p align="center"><img src="docs/images/slotless-ready.png" width="640" alt="The Slotless window: a game and keys added, the Mac chosen as the place to play, and the Build for Mac button"></p>
+
+No games or keys are included, and this project does not link to any. Use it only with games and keys you own. It is not affiliated with Nintendo or Apple.
+
+## How it works
+
+1. **Add your game and keys.** Drag a `.nsp`, `.nsz`, `.xci` or `.xcz` file (or a folder) and your console's `prod.keys` into the window. They stay on your Mac.
+2. **Let it build.** Slotless checks your Mac, installs the free tools it needs and builds the game. The first build takes 30–60 minutes; later ones are much faster.
+3. **Play.** The game becomes an app on this Mac, or installs on your iPhone over a cable. After that it runs on its own.
+
+<p align="center"><img src="docs/images/slotless-build.png" width="640" alt="Slotless during a build: the current stage, a progress bar and the stages already done"></p>
+
+## What you need
+
+- **A Mac** with Apple silicon, macOS 26.6 or later and [Xcode](https://developer.apple.com/download/all/?q=Xcode%2027.2) 27.2. Slotless tells you if something is missing.
+- **Your game and keys**: a game you own and `prod.keys` from your console.
+- **Disk space**: about twice the game's size plus 10 GB for the first build.
+- **For iPhone**: an iPhone 15 Pro or newer, a cable, Developer Mode, and an Apple ID. A free one is enough: the game then runs for 7 days, and reinstalling from Slotless renews it with your saves kept.
+
+## Install
+
+1. Download **Slotless.zip** from the [latest release](https://github.com/BorisChubiryaev/nxnative/releases/latest) and open it.
+2. The app is not notarized by Apple, so macOS warns you the first time. Open System Settings → Privacy & Security and press **Open Anyway**.
+3. At its first start Slotless downloads its components from this repository, about 200 MB.
+
+The app speaks English and Russian. Not every game works: check the [list of tested games](dm/games/README.md#games) first, and for a first try on iPhone smaller games are safer. If a build fails, its log helps: send it through [VK](https://vk.ru/club242996182) or an issue here.
+
+## Built on nxnative
+
+Slotless is a front end for this repository, a fork of [nxnative](https://github.com/seedds/nxnative), which does the actual work: it rewrites the game's code only where Apple's kernel requires it, answers the Switch's system calls with a small host, and draws NVN, Vulkan and OpenGL through Metal. Everything below is nxnative's own documentation: building from the command line, the games, and the people whose work it stands on.
+
+To build Slotless itself from this checkout, run `python3 scripts/build_builder_app.py --open` ([Slotless](docs/development.md#slotless)).
+
+Other community apps build on nxnative too: [NX2Apple](https://github.com/LNPANDY/NX2Apple), [NX Play](https://github.com/varyform/nx-native-wrapper), [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher) and [LumaNX](https://github.com/Xc1Ym/LumaNX). They are separate projects: questions about them go to their own pages.
 
 Switch 2 games have started too: [Donkey Kong Bananza](dm/games/040074A01BF12000/README.md) plays on the Mac, packed from a dump of the game; iPhone and iPad are untested.
 
@@ -18,22 +55,9 @@ This project is built on other people's work ([licenses](dm/third_party/README.m
 - **[glslang](https://github.com/KhronosGroup/glslang)** compiles the GLSL of OpenGL games to SPIR-V for it.
 - **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** (MIT): the GPU widening of 8-bit indices and in-pass clears in `dm/gfx/nvn/nvn_mtl.m`, and the visibility-counter lowering in the shader translator.
 
-## How to play
+## Build from the command line
 
-Switch 2 games are built from a folder of their files, not from NSPs, and are tested on the Mac only: see [Switch 2 games](#switch-2-games).
-
-### With a Mac app
-
-Community projects build on nxnative with Mac apps that turn your games into apps for your iPhone, iPad or Mac, with no command line, and keep them in a library. They are separate projects: questions and bugs about them go to their own pages.
-
-- [NX2Apple](https://github.com/LNPANDY/NX2Apple)
-- [NX Play](https://github.com/varyform/nx-native-wrapper)
-- [NxNative Launcher](https://github.com/rennan101/nxnative_Launcher)
-- [LumaNX](https://github.com/Xc1Ym/LumaNX)
-
-This repository has a small one too, Slotless: add your game and `prod.keys` to its window and press Build. It says what the Mac is missing and installs it, and shows the build's progress. Your files stay where they are. It can also install a game on a connected iPhone with a free Apple ID, for 7 days at a time. Build it once with `python3 scripts/build_builder_app.py --open` ([Slotless](docs/development.md#slotless)).
-
-### Build from the command line
+The same build without the app, for those who prefer a terminal. Switch 2 games are built from a folder of their files, not from NSPs, and are tested on the Mac only: see [Switch 2 games](#switch-2-games).
 
 You need a Mac with macOS 26.6 or later, [Xcode](https://developer.apple.com/download/all/?q=Xcode%2027.2) 27.2, [Homebrew](https://brew.sh) and Python 3.12 or newer (an arm64 one, not an Intel Homebrew's). An iPhone build also needs Xcode's iOS platform (Xcode → Settings → Components).
 
