@@ -86,7 +86,7 @@ enum Panels {
     }
 
     static func chooseGame(_ m: BuilderModel) {
-        if let u = pick(L("Choose your game's folder, or one of its .nsp, .nsz, .xci or .xcz files."), files: true, folders: true) { _ = m.accept([u]) }
+        if let u = pick(L("Choose your game's folder, or one of its .nsp, .nsz, .xci, .xcz or .nup files."), files: true, folders: true) { _ = m.accept([u]) }
     }
 
     static func chooseKeys(_ m: BuilderModel) {
@@ -212,10 +212,10 @@ struct SetupPane: View {
                     }
                 }
                 Section(L("1. Your game")) { GameCard() }
-                if m.game?.isDump != true {
+                if m.needsKeys {
                     Section(L("2. Keys")) { KeysRow() }
                 }
-                Section(m.game?.isDump == true ? L("2. Keys") : L("3. Where to play")) {
+                Section(m.needsKeys ? L("3. Where to play") : L("2. Where to play")) {
                     Picker(L("3. Where to play"), selection: Binding(get: { m.options.target }, set: { m.setTarget($0) })) {
                         ForEach(m.targets) { Text($0.label).tag($0) }
                     }
@@ -378,7 +378,7 @@ struct GameCard: View {
             VStack(spacing: 10) {
                 Image(systemName: "square.and.arrow.down").font(.title).foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(L("Drop your game here")).font(.headline)
-                Text(L("A folder or a file: .nsp, .nsz, .xci or .xcz. Use a game you own."))
+                Text(L("A folder or a file: .nsp, .nsz, .xci, .xcz or .nup. Use a game you own."))
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Button(L("Choose…")) { Panels.chooseGame(m) }
             }

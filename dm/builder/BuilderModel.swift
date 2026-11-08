@@ -213,6 +213,7 @@ final class BuilderModel: ObservableObject {
     var gameIsFile: Bool { !options.gameFile.isEmpty }   // the player chose one file: that is the game, whatever else its folder holds
     var gameChoices: Int { (game?.titles.count ?? 0) + (game?.unidentified.count ?? 0) }
     var needsGameChoice: Bool { !gameIsFile && gameChoices > 1 && options.titleID.isEmpty }
+    var needsKeys: Bool { game?.needsKeys(title: selectedTitle, file: options.gameFile) ?? true }
     var gameName: String {
         if let n = profile?.name, !n.isEmpty { return n }
         if needsGameChoice { return L("Which game?") }
@@ -224,11 +225,14 @@ final class BuilderModel: ObservableObject {
         return game?.fileName(of: title) ?? GameScan.hex(title)
     }
     func chooseTitle(_ hex: String) {
+        // A game held in a NUP is built from that file: the script takes a folder's NUP only when nothing else is there
+        let own = game?.packages.filter { GameScan.hex($0.baseTitle ?? 0) == hex } ?? []
+        let nup = own.allSatisfy(\.isNup) ? own.first?.name : nil
         options.titleID = hex
-        options.gameFile = ""
+        options.gameFile = nup ?? ""
         options.package = ""
         defaults.set(hex, forKey: Key.title)
-        defaults.removeObject(forKey: Key.file)
+        if let nup { defaults.set(nup, forKey: Key.file) } else { defaults.removeObject(forKey: Key.file) }
         checkEnvironment()
     }
     var freeBytes: Int64? {
@@ -245,9 +249,9 @@ final class BuilderModel: ObservableObject {
         if isInstallingTools { return L("Installing…") }
         if downloadingEngine { return L("Downloading the app's components…") }
         if repo == nil { return engineSource != nil ? L("The app's components are not downloaded.") : L("Choose the nxnative folder.") }
-        guard let game else { return L("Add your game.") }
+        guard game != nil else { return L("Add your game.") }
         if needsGameChoice { return L("This folder holds several games: choose one under Game, on the left.") }
-        if !game.isDump {
+        if needsKeys {
             if options.keys == nil { return L("Add your prod.keys.") }
             if keysProblem != nil { return L("Choose a working prod.keys.") }
         }
@@ -300,6 +304,7 @@ final class BuilderModel: ObservableObject {
     // What the script is given: for a device, the player's team, a bundle ID of their own, and the workspace inside the game's folder rather than beside it
     private var resolvedOptions: BuildOptions {
         var o = options
+        o.needsKeys = needsKeys
         if o.target != .macApp, !controls.envLines.isEmpty, o.envFile.isEmpty, let f = bakedControlsFile() { o.envFile = f }   // a Mac app reads the player's env.txt instead (saveControls)
         guard o.target == .device else { return o }
         o.teamID = team ?? ""
@@ -537,7 +542,7 @@ final class BuilderModel: ObservableObject {
         }
         if folders.count > 1 { notice = L("Put one game's files in one folder, then add that folder: the update and DLC are found beside the game.") }
         else if let f = folders.first { setGame(f, file: file) }
-        if !used { notice = L("Add a game folder, a .nsp, .nsz, .xci or .xcz file, or prod.keys.") }
+        if !used { notice = L("Add a game folder, a .nsp, .nsz, .xci, .xcz or .nup file, or prod.keys.") }
         return used
     }
 
@@ -556,7 +561,6 @@ final class BuilderModel: ObservableObject {
                 case let .success(g):
                     self.game = g
                     self.options.gameFolder = folder
-                    self.options.needsKeys = !g.isDump
                     let package = g.packages.first { $0.name == file?.lastPathComponent }
                     let chosen = package?.baseTitle.map(GameScan.hex) ?? title ?? ""
                     self.options.gameFile = package?.name ?? ""

@@ -12,7 +12,7 @@ No games or keys are included, and this project does not link to any. Use it onl
 
 ## How it works
 
-1. **Add your game and keys.** Drag a `.nsp`, `.nsz`, `.xci` or `.xcz` file (or a folder) and your console's `prod.keys` into the window. They stay on your Mac.
+1. **Add your game and keys.** Drag a `.nsp`, `.nsz`, `.xci`, `.xcz` or `.nup` file (or a folder) and your console's `prod.keys` into the window (a `.nup` needs no keys). They stay on your Mac.
 2. **Let it build.** Slotless checks your Mac, installs the free tools it needs and builds the game. The first build takes 30–60 minutes; later ones are much faster.
 3. **Play.** The game becomes an app on this Mac, or installs on your iPhone over a cable. After that it runs on its own.
 

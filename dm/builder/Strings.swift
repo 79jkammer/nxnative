@@ -29,6 +29,7 @@ enum Lang {
         // The window
         "1. Your game": "1. Ваша игра",
         "2. Keys": "2. Ключи",
+        "2. Where to play": "2. Где играть",
         "3. Where to play": "3. Где играть",
         "Options": "Настройки сборки",
         "Advanced": "Дополнительно",
@@ -73,7 +74,7 @@ enum Lang {
         "Found automatically": "Определяется автоматически",
 
         // Choosing files
-        "Choose your game's folder, or one of its .nsp, .nsz, .xci or .xcz files.": "Выберите папку с игрой или один из её файлов .nsp, .nsz, .xci, .xcz.",
+        "Choose your game's folder, or one of its .nsp, .nsz, .xci, .xcz or .nup files.": "Выберите папку с игрой или один из её файлов .nsp, .nsz, .xci, .xcz, .nup.",
         "Choose the prod.keys from your console.": "Выберите файл prod.keys со своей консоли.",
         "Choose your nxnative folder.": "Выберите папку nxnative.",
         "Choose a Python 3.12 or newer.": "Выберите Python 3.12 или новее.",
@@ -92,7 +93,7 @@ enum Lang {
         // Game
         "Reading the game folder…": "Читаю папку с игрой…",
         "Drop your game here": "Перетащите игру сюда",
-        "A folder or a file: .nsp, .nsz, .xci or .xcz. Use a game you own.": "Папка или файл .nsp, .nsz, .xci, .xcz. Используйте свою игру.",
+        "A folder or a file: .nsp, .nsz, .xci, .xcz or .nup. Use a game you own.": "Папка или файл .nsp, .nsz, .xci, .xcz, .nup. Используйте свою игру.",
         "Which game?": "Какая игра?",
         "Game to build": "Игра для сборки",
         "The game is recognized when the build starts.": "Игра определится в начале сборки.",
@@ -107,7 +108,7 @@ enum Lang {
         "Update": "Обновление",
         "DLC": "DLC",
         "Package": "Пакет",
-        "%@ holds no game: no .nsp, .nsz, .xci or .xcz file, and no base/exefs/main.npdm of a dump.": "В папке «%@» нет игры: ни файлов .nsp, .nsz, .xci, .xcz, ни дампа с base/exefs/main.npdm.",
+        "%@ holds no game: no .nsp, .nsz, .xci, .xcz or .nup file, and no base/exefs/main.npdm of a dump.": "В папке «%@» нет игры: ни файлов .nsp, .nsz, .xci, .xcz, .nup, ни дампа с base/exefs/main.npdm.",
 
         // Keys
         "The keys file (prod.keys) from your own console": "Файл ключей prod.keys с вашей консоли",
@@ -358,7 +359,7 @@ enum Lang {
 
         // Adding files
         "Put one game's files in one folder, then add that folder: the update and DLC are found beside the game.": "Сложите файлы одной игры в одну папку и добавьте её: обновление и DLC найдутся рядом с игрой.",
-        "Add a game folder, a .nsp, .nsz, .xci or .xcz file, or prod.keys.": "Добавьте папку с игрой, файл .nsp, .nsz, .xci, .xcz или prod.keys.",
+        "Add a game folder, a .nsp, .nsz, .xci, .xcz or .nup file, or prod.keys.": "Добавьте папку с игрой, файл .nsp, .nsz, .xci, .xcz, .nup или prod.keys.",
         "%@ is not an nxnative checkout: it has no scripts/build_ipa_from_nsp.py.": "«%@» не папка nxnative: в ней нет scripts/build_ipa_from_nsp.py.",
     ]
 }

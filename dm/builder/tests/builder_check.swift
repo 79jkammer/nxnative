@@ -213,6 +213,68 @@ func checkEvents() {
     check(t.lines.count == BuildTranscript.maxLines, "the messages are bounded")
 }
 
+// A NUP's head as scripts/pack_nup.py reads it: (title, kind, version, has code), and each file's unpacked size. test_builder_app.py also runs this on a file its packer's test wrote (NUP_SAMPLE).
+func nupBytes(_ packages: [(UInt64, UInt8, UInt32, Bool)], files: [UInt64], magic: String = "NUP\u{01}") -> Data {
+    func le<T: FixedWidthInteger>(_ v: T) -> Data { withUnsafeBytes(of: v.littleEndian) { Data($0) } }
+    func join(_ parts: [Data]) -> Data { parts.reduce(Data(), +) }
+    var toc = join([Data("TOC\u{01}".utf8), le(UInt32(packages.count)), le(UInt64(0)), le(UInt64(files.count)), Data(count: 24)])
+    for p in packages {
+        let exefs: UInt32 = p.3 ? 0 : .max
+        toc += join([le(p.0), le(UInt32(0)), le(exefs), le(UInt32.max), le(p.2), le(p.1), le(UInt8(0)), le(UInt16(0)), le(UInt32(0)), le(UInt64(0)), le(UInt32(0)), Data(count: 20)])
+    }
+    for f in files { toc += join([le(UInt32(0)), le(UInt32(0)), le(f), le(UInt64(0)), le(UInt64(0)), Data(count: 48)]) }
+    return join([Data(magic.utf8), le(UInt16(0x80)), le(UInt16(0)), le(UInt64(0x80)), le(UInt64(toc.count)), Data(count: 0x80 - 24), toc])
+}
+
+func checkNup(_ tmp: URL) throws {
+    let fm = FileManager.default
+    let title: UInt64 = 0x0400AAAA00000000, big: UInt64 = 40 << 30
+    let d = tmp.appendingPathComponent("nup")
+    try fm.createDirectory(at: d, withIntermediateDirectories: true)
+    try nupBytes([(title, 0, 0, true), (title, 1, 131072, true), (title + 0x1001, 2, 0, false)], files: [big, 1 << 30]).write(to: d.appendingPathComponent("Game.NUP"))
+    var s = try GameScan.scan(d)
+    check(s.titles == [title], "a NUP's game comes from its table of contents: \(s.titles.map(GameScan.hex))")
+    check(s.versions == [0, 131072], "a NUP's versions: \(s.versions)")
+    check(s.packages[0].holdsSeveral && s.packages[0].kind == .base, "a NUP is one file that holds several")
+    check(!s.needsKeys(title: title, file: "") && !s.needsKeys(title: nil, file: "Game.NUP"), "a NUP needs no keys")
+    check(GameScan.spaceNeeded(s) > 80 << 30, "the space a NUP needs counts its unpacked size")
+
+    var o = BuildOptions()
+    o.gameFolder = d; o.gameFile = "Game.NUP"; o.titleID = GameScan.hex(title); o.needsKeys = false
+    o.keys = URL(fileURLWithPath: "/k/prod.keys")
+    let a = o.arguments()
+    check(a.first == d.appendingPathComponent("Game.NUP").path, "the chosen NUP goes in place of the folder: \(a)")
+    check(!a.contains("-k") && !a.contains("--game-file") && !a.contains("--title-id"), "the container says the rest: \(a)")
+
+    // A package beside a NUP: the script packs the package unless the NUP is the chosen file
+    try pfs0(["a.nca"]).write(to: d.appendingPathComponent("Game [0400AAAA00000000][v0].nsp"))
+    s = try GameScan.scan(d)
+    check(s.needsKeys(title: title, file: ""), "a package beside the NUP needs keys")
+    check(!s.needsKeys(title: title, file: "Game.NUP"), "the chosen NUP does not")
+
+    // An update alone, as a standalone NUP has it; a base record with no code is no version
+    let lone = tmp.appendingPathComponent("lone")
+    try fm.createDirectory(at: lone, withIntermediateDirectories: true)
+    try nupBytes([(title, 0, 0, false), (title | 0x800, 1, 65536, true)], files: [1]).write(to: lone.appendingPathComponent("u.nup"))
+    let u = try GameScan.scan(lone)
+    check(u.titles == [title] && u.versions == [65536], "an update alone: \(u.titles) \(u.versions)")
+
+    // A newer format is still offered: the script says what is wrong. A file that is no NUP is not a game
+    let other = tmp.appendingPathComponent("other")
+    try fm.createDirectory(at: other, withIntermediateDirectories: true)
+    try nupBytes([(title, 0, 0, true)], files: [1], magic: "NUP\u{02}").write(to: other.appendingPathComponent("new.nup"))
+    check(try GameScan.scan(other).unidentified.map(\.name) == ["new.nup"], "a NUP of a newer format")
+    let not = tmp.appendingPathComponent("not")
+    try fm.createDirectory(at: not, withIntermediateDirectories: true)
+    try Data("renamed".utf8).write(to: not.appendingPathComponent("x.nup"))
+    do { _ = try GameScan.scan(not); check(false, "a file that only has the extension is refused") } catch {}
+
+    if let sample = ProcessInfo.processInfo.environment["NUP_SAMPLE"] {
+        let real = try GameScan.scan(URL(fileURLWithPath: sample).deletingLastPathComponent())
+        check(real.titles == [0x040074A01BF12000] && real.versions == [0, 458752] && real.packages[0].unpacked > 0, "a NUP the packer's test wrote: \(real.titles) \(real.versions)")
+    }
+}
+
 func checkScan(_ tmp: URL) throws {
     let fm = FileManager.default
     let g = tmp.appendingPathComponent("game")
@@ -365,6 +427,7 @@ struct BuilderCheck {
         checkArguments()
         checkEvents()
         try checkScan(tmp)
+        try checkNup(tmp)
         try checkControls(tmp)
         checkRun(fake, python, tmp)
         print(failures == 0 ? "ok" : "\(failures) failed")
