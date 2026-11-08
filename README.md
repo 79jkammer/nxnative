@@ -4,6 +4,8 @@
 
 Free and open source, with no account, no ads and no command line.
 
+**New in 0.7: Switch 2 games, native on the Mac.** Eleven are in the [games list](dm/games/README.md#games), among them Mario Kart World and Donkey Kong Bananza. Add your own game as one `.nup` file; it needs no keys. They have not been tested on the iPhone.
+
 **[Download Slotless for Mac](https://github.com/BorisChubiryaev/nxnative/releases/latest/download/Slotless.zip)** · [Website](https://slotless.pages.dev) · [Tested games](dm/games/README.md#games) · [VK](https://vk.ru/club242996182) · [Support the project](https://boosty.to/oldnewborispro)
 
 <p align="center"><img src="docs/images/slotless-ready.png" width="640" alt="The Slotless window: a game and keys added, the Mac chosen as the place to play, and the Build for Mac button"></p>
@@ -21,8 +23,9 @@ No games or keys are included, and this project does not link to any. Use it onl
 ## What you need
 
 - **A Mac** with Apple silicon, macOS 26.6 or later and [Xcode](https://developer.apple.com/download/all/?q=Xcode%2027.2) 27.2. Slotless tells you if something is missing.
-- **Your game and keys**: a game you own and `prod.keys` from your console.
+- **Your game and keys**: a game you own and `prod.keys` from your console. A `.nup` file needs no keys.
 - **Disk space**: about twice the game's size plus 10 GB for the first build.
+- **For Switch 2 games**: a Mac with plenty of memory. Ocarina of Time alone takes about 11 GB, so a Mac with 8 GB will struggle.
 - **For iPhone**: an iPhone 15 Pro or newer, a cable, Developer Mode, and an Apple ID. A free one is enough: the game then runs for 7 days, and reinstalling from Slotless renews it with your saves kept.
 
 ## Install
