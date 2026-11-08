@@ -1,4 +1,5 @@
 """Compile Slotless's logic and run dm/builder/tests/builder_check.swift; no window or game needed."""
+import os
 from pathlib import Path
 import re
 import shutil
@@ -9,6 +10,7 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[3]
 BUILDER = REPO / 'dm/builder'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 @unittest.skipUnless(sys.platform == 'darwin' and shutil.which('xcrun'), 'needs the macOS Swift toolchain')
@@ -23,7 +25,14 @@ class BuilderAppTests(unittest.TestCase):
             self.assertEqual(built.returncode, 0, built.stderr)
             work = tmp / 'work'
             work.mkdir()
-            r = subprocess.run([exe, BUILDER / 'tests/fake_build.py', sys.executable, work], capture_output=True, text=True, timeout=180)
+            env = dict(os.environ)
+            try:   # a real container, by the packer's own test: the app's reading of its table of contents stays in step
+                import test_nsp_nup as t
+                sample = tmp / 'sample'; sample.mkdir()
+                t.write_nup(sample / 'game.nup', [(0, t.TID, 0, t.version(marker='old'), t.META), (1, t.TID, t.VER, t.version(main=b'new code', marker='new'), b'')])
+                env['NUP_SAMPLE'] = str(sample / 'game.nup')
+            except ImportError: pass   # no zstd module
+            r = subprocess.run([exe, BUILDER / 'tests/fake_build.py', sys.executable, work], capture_output=True, text=True, timeout=180, env=env)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_the_icon_is_a_png_of_the_size_asked(self):   # its corners clear, its middle solid: iconutil rejects anything else, and Finder would show a blank app

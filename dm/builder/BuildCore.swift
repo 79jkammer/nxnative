@@ -26,7 +26,7 @@ func shellQuote(_ s: String) -> String {
 struct BuildOptions {
     var gameFolder: URL?
     var keys: URL?
-    var needsKeys = true   // false for a dump folder
+    var needsKeys = true   // false for a dump folder or a NUP
     var target = BuildTarget.ios
     var titleID = ""       // only when the folder holds several games
     var gameFile = ""      // the package the player chose, which names the game while its title ID is not known
@@ -53,15 +53,19 @@ struct BuildOptions {
     // What comes after the script's path. An option at the script's default is left out, so the script's own default holds and the command stays short.
     func arguments() -> [String] {
         var a: [String] = []
-        if let gameFolder { a.append(gameFolder.path) }
+        // A NUP the player chose goes in place of the folder (which may hold other games); the script reads its game from the container itself
+        let nup = gameFile.lowercased().hasSuffix(".nup")
+        if let gameFolder { a.append(nup ? gameFolder.appendingPathComponent(gameFile).path : gameFolder.path) }
         if needsKeys, let keys { a += ["-k", keys.path] }
         a += ["--platform", target.platform, "--progress", "json"]
         func text(_ flag: String, _ value: String) {
             let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
             if !v.isEmpty { a += [flag, v] }
         }
-        text("--title-id", titleID)
-        if titleID.isEmpty { text("--game-file", gameFile) }
+        if !nup {
+            text("--title-id", titleID)
+            if titleID.isEmpty { text("--game-file", gameFile) }
+        }
         text("-p", package)
         text("-l", language)
         text("--app-name", appName)
@@ -248,6 +252,9 @@ struct GamePackage: Identifiable, Equatable {
     let titleID: UInt64?
     let version: Int?
     let holdsSeveral: Bool   // base game, update and DLC in one file
+    var contained: [Int] = []   // a NUP: the versions it can pack
+    var unpacked: Int64 = 0     // a NUP: its files' size once unpacked, as they are compressed in it
+    var isNup: Bool { (name as NSString).pathExtension.lowercased() == "nup" }
     var id: String { name }
     var kind: Kind {
         guard let titleID else { return .unknown }
@@ -297,6 +304,13 @@ struct GameFolder: Equatable {
 
     var unidentified: [GamePackage] { packages.filter { $0.titleID == nil } }
 
+    // As the script: a NUP (the chosen file, or the only kind of package there) and a dump folder are not encrypted. A package beside a NUP wins over it when no file is chosen.
+    func needsKeys(title: UInt64?, file: String) -> Bool {
+        if isDump || file.lowercased().hasSuffix(".nup") { return false }
+        let own = files(title: title, file: file)
+        return own.isEmpty || !own.allSatisfy(\.isNup)
+    }
+
     // The game's name as its files give it: "Game [0100…][v0].nsp" → "Game"
     func fileName(of title: UInt64?) -> String? {
         let own = packages(of: title)
@@ -318,7 +332,7 @@ enum GameScanError: LocalizedError {
 }
 
 enum GameScan {
-    static let extensions = ["nsp", "nsz", "xci", "xcz"]
+    static let extensions = ["nsp", "nsz", "xci", "xcz", "nup"]
 
     static func isPackage(_ url: URL) -> Bool { extensions.contains(url.pathExtension.lowercased()) }
     static func hex(_ title: UInt64) -> String { String(format: "%016llX", title) }
@@ -328,9 +342,9 @@ enum GameScan {
         let npdm = folder.appendingPathComponent("base/exefs/main.npdm")
         if fm.fileExists(atPath: npdm.path) { return dump(folder, npdm) }
         let items = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles])) ?? []
-        let packages = items.filter(isPackage).map(package).sorted { ($0.kind.rawValue, $0.version ?? 0, $0.name) < ($1.kind.rawValue, $1.version ?? 0, $1.name) }
+        let packages = items.filter { isPackage($0) && (($0.pathExtension.lowercased() != "nup") || isNupFile($0)) }.map(package).sorted { ($0.kind.rawValue, $0.version ?? 0, $0.name) < ($1.kind.rawValue, $1.version ?? 0, $1.name) }
         if packages.isEmpty {
-            throw GameScanError.empty(L("%@ holds no game: no .nsp, .nsz, .xci or .xcz file, and no base/exefs/main.npdm of a dump.", folder.lastPathComponent))
+            throw GameScanError.empty(L("%@ holds no game: no .nsp, .nsz, .xci, .xcz or .nup file, and no base/exefs/main.npdm of a dump.", folder.lastPathComponent))
         }
         let titles = Array(Set(packages.compactMap(\.baseTitle))).sorted()
         return GameFolder(url: folder, isDump: false, packages: packages, titles: titles, versions: versions(packages),
@@ -338,8 +352,10 @@ enum GameScan {
     }
 
     static func versions(_ packages: [GamePackage]) -> [Int] {
-        var found = Set(packages.filter { $0.kind == .update }.compactMap(\.version))
-        if let base = packages.first(where: { $0.kind == .base }) { found.insert(base.version ?? 0) }
+        let plain = packages.filter { !$0.isNup }
+        var found = Set(plain.filter { $0.kind == .update }.compactMap(\.version))
+        if let base = plain.first(where: { $0.kind == .base }) { found.insert(base.version ?? 0) }
+        for p in packages where p.isNup { found.formUnion(p.contained) }
         return found.sorted()
     }
 
@@ -350,6 +366,10 @@ enum GameScan {
     private static func package(_ url: URL) -> GamePackage {
         let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
         let name = url.lastPathComponent
+        if url.pathExtension.lowercased() == "nup" {   // an unreadable one has no title: the script says what is wrong with it
+            let h = nupHead(url)
+            return GamePackage(name: name, size: size, titleID: h?.title, version: h?.versions.max(), holdsSeveral: (h?.packages ?? 0) > 1, contained: h?.versions ?? [], unpacked: h?.unpacked ?? 0)
+        }
         let names = pfs0Names(url)
         // As the script's title_of: the ticket first, as a file name's tag can be wrong; a package with neither is identified by the script, with the keys
         var title: UInt64?
@@ -384,6 +404,42 @@ enum GameScan {
         }
     }
 
+    static func isNupFile(_ url: URL) -> Bool {
+        guard let f = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? f.close() }
+        return (try? f.read(upToCount: 3))?.elementsEqual("NUP".utf8) == true
+    }
+
+    struct NupHead { var title: UInt64?; var versions: [Int]; var unpacked: Int64; var packages: Int }
+
+    // What a NUP holds, from its table of contents (scripts/pack_nup.py: SUPER, TOC, PKG, FILE). The script validates the container; a game's real ID is its code's, read there.
+    static func nupHead(_ url: URL) -> NupHead? {
+        guard let f = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? f.close() }
+        guard let s = try? f.read(upToCount: 0x80), s.count == 0x80, s.prefix(4).elementsEqual([0x4E, 0x55, 0x50, 0x01]) else { return nil }
+        let off = u64(s, 8), size = u64(s, 16)
+        guard size >= 0x30, size < 1 << 30, (try? f.seek(toOffset: off)) != nil, let toc = try? f.read(upToCount: Int(size)), toc.count == Int(size), toc.prefix(4).elementsEqual([0x54, 0x4F, 0x43, 0x01]) else { return nil }
+        let count = Int(u32(toc, 4)), dirs = u64(toc, 8), files = u64(toc, 16)
+        guard count > 0, dirs < size, files < size else { return nil }
+        let filesAt = 0x30 + count * 0x40 + Int(dirs) * 0x18
+        guard filesAt + Int(files) * 0x50 <= toc.count else { return nil }
+        var app: UInt64?, firstUpdate: UInt64?, versions = Set<Int>()
+        for i in 0..<count {
+            let p = 0x30 + i * 0x40, title = u64(toc, p), kind = toc[toc.startIndex + p + 24]
+            if kind == 0 {
+                if app == nil { app = title }
+                if u32(toc, p + 12) != 0xFFFF_FFFF { versions.insert(0) }
+            } else if kind == 1 {
+                if firstUpdate == nil { firstUpdate = title }
+                versions.insert(Int(u32(toc, p + 20)))
+            }
+        }
+        let unpacked = (0..<Int(files)).reduce(Int64(0)) { $0 + Int64(clamping: u64(toc, filesAt + $1 * 0x50 + 8)) }
+        return NupHead(title: (app ?? firstUpdate).map { $0 & ~0xFFF }, versions: versions.sorted(), unpacked: unpacked, packages: count)
+    }
+
+    private static func u64(_ d: Data, _ at: Int) -> UInt64 { UInt64(u32(d, at)) | UInt64(u32(d, at + 4)) << 32 }
+
     private static func u32(_ d: Data, _ at: Int) -> UInt32 {
         let i = d.startIndex + at
         return UInt32(d[i]) | UInt32(d[i + 1]) << 8 | UInt32(d[i + 2]) << 16 | UInt32(d[i + 3]) << 24
@@ -414,7 +470,7 @@ enum GameScan {
     // The first build needs about twice the game's size plus 10 GB (README.md). An existing build folder already holds most of it.
     static func spaceNeeded(_ game: GameFolder, title: UInt64? = nil, file: String = "") -> Int64 {
         let built = title.map { FileManager.default.fileExists(atPath: game.url.appendingPathComponent(hex($0) + "_build").path) } ?? (file.isEmpty && game.hasBuildFolder)
-        return built ? 0 : game.files(title: title, file: file).reduce(0) { $0 + $1.size } * 2 + 10 << 30
+        return built ? 0 : game.files(title: title, file: file).reduce(0) { $0 + max($1.size, $1.unpacked) } * 2 + 10 << 30
     }
 }
 

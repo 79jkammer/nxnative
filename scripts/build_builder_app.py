@@ -83,7 +83,7 @@ def build(app, release=None):
         make_icon(app / 'Contents/Resources/Slotless.icns')
     with open(app / 'Contents/Info.plist', 'wb') as f:
         plistlib.dump({'CFBundleName': 'Slotless', 'CFBundleDisplayName': 'Slotless', 'CFBundleIdentifier': 'org.nxnative.builder', 'CFBundleExecutable': 'Slotless', 'CFBundleIconFile': 'Slotless',
-                       'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.6', 'CFBundleVersion': '6', 'LSMinimumSystemVersion': MINOS, 'NSHighResolutionCapable': True,
+                       'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.7', 'CFBundleVersion': '7', 'LSMinimumSystemVersion': MINOS, 'NSHighResolutionCapable': True,
                        'LSApplicationCategoryType': 'public.app-category.developer-tools', **(release or {'NXRepoRoot': str(REPO)})}, f)
     subprocess.run(['codesign', '--force', '--sign', '-', app], check=True, capture_output=True)
 

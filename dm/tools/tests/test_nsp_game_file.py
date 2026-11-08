@@ -20,29 +20,34 @@ class GameFile(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix='nsp_game_file_'))
         self.addCleanup(shutil.rmtree, self.tmp)
-        for name in (f'First [{FIRST:016X}][v0].nsp', f'Second [{SECOND:016X}][v0].nsp', 'New game.nsp'):
-            (self.tmp / name).write_bytes(b'PFS0' + struct.pack('<III', 0, 0, 0))
-        self.read = lambda p: NEW if p.name == 'New game.nsp' else None
+        self.metas = {}
+        for name, tid in (('First.nsp', FIRST), ('Second.nsp', SECOND), ('New game.nsp', NEW)):
+            self.add(name, 'Application', tid)
 
-    def test_a_file_without_a_tag_is_read_from_the_package(self):
+    def add(self, name, kind, tid):
+        p = self.tmp / name
+        p.write_bytes(b'PFS0' + struct.pack('<III', 0, 0, 0))
+        self.metas[p] = [(kind, tid, 0)]
+        return p
+
+    def read(self, paths): return {p: self.metas[p] for p in paths}
+
+    def test_the_package_names_its_game(self):
         self.assertEqual(nsp.game_of_file(self.tmp / 'New game.nsp', self.read), NEW)
 
-    def test_a_tagged_file_needs_no_reading(self):
-        self.assertEqual(nsp.game_of_file(self.tmp / f'First [{FIRST:016X}][v0].nsp'), FIRST)
-
     def test_an_update_or_dlc_names_its_game(self):
-        for tid in (FIRST + 0x800, FIRST + 0x1001):
-            p = self.tmp / f'Extra [{tid:016X}][v1].nsp'
-            p.write_bytes(b'PFS0' + struct.pack('<III', 0, 0, 0))
-            self.assertEqual(nsp.game_of_file(p), FIRST)
+        for kind, tid in (('Patch', FIRST + 0x800), ('AddOnContent', FIRST + 0x1001)):
+            self.assertEqual(nsp.game_of_file(self.add(f'{kind}.nsp', kind, tid), self.read), FIRST)
 
     def test_the_chosen_game_is_packed_from_a_folder_of_others(self):
         app, fam = nsp.scan_nsps(self.tmp, self.read, want=nsp.game_of_file(self.tmp / 'New game.nsp', self.read))
         self.assertEqual((app, fam['base'].name), (NEW, 'New game.nsp'))
 
     def test_a_file_that_cannot_be_read_says_so(self):
-        with self.assertRaisesRegex(nsp.BuildError, 'could not be read'):
-            nsp.game_of_file(self.tmp / 'New game.nsp', lambda p: None)
+        p = self.tmp / 'New game.nsp'
+        self.metas[p] = 'no meta NCA'
+        with self.assertRaisesRegex(nsp.BuildError, 'could not be read: no meta NCA'):
+            nsp.game_of_file(p, self.read)
 
     def test_a_missing_file_says_so(self):
         with self.assertRaisesRegex(nsp.BuildError, 'no such game file'):
