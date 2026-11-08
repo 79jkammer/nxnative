@@ -317,7 +317,7 @@ enum Lang {
         "Controls": "Управление",
         "A controller is recommended": "Рекомендуем геймпад",
         "Most 3D games are much easier with one: a DualSense, an Xbox controller, a Switch Pro Controller, or one that holds the phone, such as Backbone or Razer Kishi. Pair it in Settings → Bluetooth, or plug it in. The buttons on the screen hide by themselves while it is connected.": "В большинство 3D-игр с ним играть намного удобнее: DualSense, геймпад Xbox, Switch Pro Controller или держатель для телефона вроде Backbone или Razer Kishi. Подключите его в Настройки → Bluetooth или кабелем. Кнопки на экране скроются сами, пока он подключён.",
-        "Playing by touch? In the game, hold the 2D / 3D button to move, resize or hide the buttons.": "Играете касаниями? В игре удерживайте кнопку 2D / 3D, чтобы переместить, изменить размер или скрыть кнопки.",
+        "Playing by touch? In the game, open the menu (the gear at the top) and choose Edit on-screen buttons to move, resize or hide them.": "Играете касаниями? В игре откройте меню (шестерёнка вверху) и выберите Edit on-screen buttons, чтобы переместить, изменить или скрыть кнопки.",
         "Vibration, camera direction, trackpad camera on the Mac and the size of the buttons on the screen are on the settings screen each game shows before it starts.": "Вибрация, направление камеры, камера на трекпаде Mac и размер кнопок на экране — на экране настроек, который игра показывает перед запуском.",
         "Keyboard (on the Mac)": "Клавиатура (на Mac)",
         "Controller: what each button presses": "Геймпад: что нажимает каждая кнопка",

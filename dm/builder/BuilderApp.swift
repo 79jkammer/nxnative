@@ -523,7 +523,7 @@ struct ControllerTip: View {
             Label(L("A controller is recommended"), systemImage: "gamecontroller.fill").fontWeight(.medium)
             Text(L("Most 3D games are much easier with one: a DualSense, an Xbox controller, a Switch Pro Controller, or one that holds the phone, such as Backbone or Razer Kishi. Pair it in Settings → Bluetooth, or plug it in. The buttons on the screen hide by themselves while it is connected."))
                 .font(.callout).foregroundStyle(.secondary)
-            Text(L("Playing by touch? In the game, hold the 2D / 3D button to move, resize or hide the buttons."))
+            Text(L("Playing by touch? In the game, open the menu (the gear at the top) and choose Edit on-screen buttons to move, resize or hide them."))
                 .font(.callout).foregroundStyle(.secondary)
         }
     }
