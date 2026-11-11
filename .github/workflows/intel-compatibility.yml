@@ -1,0 +1,47 @@
+name: Intel compatibility
+on:
+  push:
+    branches: [codex/intel-compatibility]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  intel:
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record environment
+        run: |
+          mkdir -p results
+          uname -a | tee results/environment.txt
+          sw_vers | tee -a results/environment.txt
+          xcodebuild -version | tee -a results/environment.txt
+          test "$(uname -m)" = x86_64
+      - name: Compile Intel frontend
+        id: frontend
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcrun swiftc -sdk "$(xcrun --show-sdk-path)" -target x86_64-apple-macos15.0 -O -swift-version 5 -parse-as-library -o results/Slotless-frontend dm/builder/*.swift 2>&1 | tee results/frontend.log
+          file results/Slotless-frontend | tee results/frontend-architecture.txt
+      - name: Compile runtime entry for Intel
+        id: runtime
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcrun clang -arch x86_64 -c dm/host/entry.S -o results/entry.o 2>&1 | tee results/runtime.log
+      - name: Report scope
+        if: always()
+        run: |
+          printf '%s\n' 'Compatibility probe only. Not a working Intel game runtime.' 'No game execution or Radeon GPU validation performed.' 'Frontend: ${{ steps.frontend.outcome }}' 'Runtime entry: ${{ steps.runtime.outcome }}' | tee results/SCOPE.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intel-compatibility-results
+          path: results/
+      - name: Require both probes to pass
+        if: always()
+        run: |
+          test '${{ steps.frontend.outcome }}' = success
+          test '${{ steps.runtime.outcome }}' = success
